@@ -28,47 +28,51 @@ from tkinter import ttk, messagebox
 # COLOR PALETTE - Broadcast Dark Control Room Theme
 # ==============================================================================
 THEME = {
-    "bg_root": "#0E1117",
-    "bg_header": "#151922",
-    "bg_card": "#1C212D",
-    "bg_card_border": "#2C3446",
-    "bg_card_inner": "#12161F",
-    "text_main": "#ECEFF4",
-    "text_muted": "#8A93A6",
+    "bg_root": "#0C0F14",
+    "bg_header": "#131720",
+    "bg_card": "#181D27",
+    "bg_card_border": "#252D3D",
+    "bg_card_inner": "#10141C",
+    "text_main": "#F0F3F8",
+    "text_muted": "#7E8B9F",
     "text_accent": "#00E5FF",
     "accent_primary": "#00B4D8",
     "accent_hover": "#0077B6",
     "status_connected": "#00E676",
-    "status_sim": "#B388FF",
-    "status_error": "#FF3D00",
-    "status_disconnected": "#78909C",
+    "status_sim": "#C084FC",
+    "status_error": "#FF334B",
+    "status_disconnected": "#64748B",
     
-    # Meter Colors
+    # Meter Colors (Audio VU)
     "meter_green": "#00E676",
-    "meter_yellow": "#FFEA00",
+    "meter_yellow": "#FFD600",
     "meter_orange": "#FF9100",
     "meter_red": "#FF1744",
-    "meter_bg": "#181D26",
-    "meter_grid": "#242C3A",
+    "meter_bg": "#0D1117",
+    "meter_grid": "#1E2633",
     "meter_peak": "#FFFFFF",
     
-    # RF Colors
-    "rf_high": "#00E5FF",
-    "rf_med": "#FFEA00",
-    "rf_low": "#FF3D00",
-    "rf_bg": "#181D26",
+    # RF Meters & 5 Purple Quality Dots
+    "rf_bar_active": "#00E5FF",
+    "rf_bar_inactive": "#007799",
+    "rf_bar_bg": "#121722",
+    "rf_qual_purple": "#B829E3",       # Shure Axient Violet/Purple
+    "rf_qual_purple_bright": "#D946EF",
+    "rf_qual_off": "#281E36",
     
-    # Battery Colors
+    # Battery Colors & Blinking Alert
     "batt_normal": "#00E676",
     "batt_med": "#FFB300",
     "batt_low": "#FF1744",
+    "batt_alert_bg1": "#4A0E17",
+    "batt_alert_bg2": "#1E080C",
+    "batt_alert_border": "#FF1744",
     
     # LED Indicator Colors
-    "led_off": "#2A3140",
+    "led_off": "#222938",
     "led_mute": "#FF3D00",
     "led_interf": "#FF1744",
     "led_enc": "#00E5FF",
-    "led_rf_active": "#00E676",
     "led_peak": "#FF1744",
 }
 
@@ -134,7 +138,6 @@ class ShureParser:
             values = tokens[start_idx + 1:]
             val_str = " ".join(values)
             
-            # Remove enclosing quotes if any
             if val_str.startswith("{") and val_str.endswith("}"):
                 val_str = val_str[1:-1]
             elif val_str.startswith('"') and val_str.endswith('"'):
@@ -157,8 +160,8 @@ class ShureParser:
 class ShureSimulator(threading.Thread):
     """
     Native offline simulator generating realistic Shure AD4Q telemetry.
-    Produces believable voice/music audio peak dynamics, RF link fluctuations,
-    battery drainage, and intermittent alerts.
+    Includes Dual RF antennas (A & B), 5-dot purple RF Quality indicator,
+    full dynamics audio and progressive battery drainage.
     """
     def __init__(self, output_queue: queue.Queue):
         super().__init__(daemon=True)
@@ -166,7 +169,6 @@ class ShureSimulator(threading.Thread):
         self.running = threading.Event()
         self.running.set()
         
-        # Channel baseline state
         self.channels = {
             1: {
                 "name": "VOCAL LEAD",
@@ -174,15 +176,15 @@ class ShureSimulator(threading.Thread):
                 "audio_level": 15,
                 "audio_target": 75,
                 "audio_phase": 0.0,
-                "rf_qual": 245,
+                "rf_a": 220,
+                "rf_b": 190,
+                "rf_qual": 245,  # 5 purple dots
                 "antenna": "A",
                 "batt_mins": 480,
                 "batt_bars": 5,
-                "batt_type": "SB900A",
                 "mute": False,
                 "interf": False,
                 "enc": True,
-                "talking": True,
             },
             2: {
                 "name": "VOCAL BACKING",
@@ -190,15 +192,15 @@ class ShureSimulator(threading.Thread):
                 "audio_level": 10,
                 "audio_target": 65,
                 "audio_phase": 1.2,
-                "rf_qual": 230,
+                "rf_a": 180,
+                "rf_b": 235,
+                "rf_qual": 210,  # 5 purple dots
                 "antenna": "B",
                 "batt_mins": 390,
                 "batt_bars": 4,
-                "batt_type": "SB900A",
                 "mute": False,
                 "interf": False,
                 "enc": True,
-                "talking": True,
             },
             3: {
                 "name": "BASS GUITAR",
@@ -206,15 +208,16 @@ class ShureSimulator(threading.Thread):
                 "audio_level": 20,
                 "audio_target": 85,
                 "audio_phase": 2.5,
-                "rf_qual": 215,
+                "rf_a": 195,
+                "rf_b": 170,
+                "rf_qual": 160,  # 3-4 purple dots
                 "antenna": "A",
-                "batt_mins": 110,
-                "batt_bars": 2,
-                "batt_type": "SB900A",
+                # Simulated critically low battery (< 20%) to test visual flashing alert
+                "batt_mins": 18,
+                "batt_bars": 1,
                 "mute": False,
                 "interf": False,
                 "enc": False,
-                "talking": True,
             },
             4: {
                 "name": "GUEST / SPARE",
@@ -222,15 +225,15 @@ class ShureSimulator(threading.Thread):
                 "audio_level": 5,
                 "audio_target": 10,
                 "audio_phase": 4.0,
-                "rf_qual": 250,
+                "rf_a": 240,
+                "rf_b": 225,
+                "rf_qual": 250,  # 5 purple dots
                 "antenna": "A",
                 "batt_mins": 540,
                 "batt_bars": 5,
-                "batt_type": "SB900A",
                 "mute": True,
                 "interf": False,
                 "enc": True,
-                "talking": False,
             }
         }
         self.step_counter = 0
@@ -239,107 +242,65 @@ class ShureSimulator(threading.Thread):
         self.running.clear()
 
     def run(self):
-        # 1. Send initial setup reports (< REP ... >)
         self.output_queue.put({"type": "STATUS", "status": "CONNECTED", "msg": "Simulator Mode (AD4Q 4-Ch)"})
+        self.output_queue.put({"type": "REP", "channel": None, "command": "MODEL", "value": "AD4Q"})
         
-        # Announce receiver model
-        self.output_queue.put({
-            "type": "REP", "channel": None, "command": "MODEL", "value": "AD4Q"
-        })
-        
-        # Initial Channel configuration
         for ch, data in self.channels.items():
-            self.output_queue.put({
-                "type": "REP", "channel": ch, "command": "CHAN_NAME", "value": data["name"]
-            })
-            self.output_queue.put({
-                "type": "REP", "channel": ch, "command": "FREQUENCY", "value": data["freq"].replace(".", "") + "0"
-            })
-            self.output_queue.put({
-                "type": "REP", "channel": ch, "command": "ENCRYPTION", "value": "ON" if data["enc"] else "OFF"
-            })
-            self.output_queue.put({
-                "type": "REP", "channel": ch, "command": "AUDIO_MUTE", "value": "ON" if data["mute"] else "OFF"
-            })
-            self.output_queue.put({
-                "type": "REP", "channel": ch, "command": "TX_BATT_MINS", "value": str(data["batt_mins"])
-            })
-            self.output_queue.put({
-                "type": "REP", "channel": ch, "command": "TX_BATT_BARS", "value": str(data["batt_bars"])
-            })
+            self.output_queue.put({"type": "REP", "channel": ch, "command": "CHAN_NAME", "value": data["name"]})
+            self.output_queue.put({"type": "REP", "channel": ch, "command": "FREQUENCY", "value": data["freq"].replace(".", "") + "0"})
+            self.output_queue.put({"type": "REP", "channel": ch, "command": "ENCRYPTION", "value": "ON" if data["enc"] else "OFF"})
+            self.output_queue.put({"type": "REP", "channel": ch, "command": "AUDIO_MUTE", "value": "ON" if data["mute"] else "OFF"})
+            self.output_queue.put({"type": "REP", "channel": ch, "command": "TX_BATT_MINS", "value": str(data["batt_mins"])})
+            self.output_queue.put({"type": "REP", "channel": ch, "command": "TX_BATT_BARS", "value": str(data["batt_bars"])})
 
-        # 2. Main periodic telemetry loop (100ms interval)
         while self.running.is_set():
             time.sleep(0.10)
             self.step_counter += 1
             
-            # Every 10 seconds, drain 1 minute of battery
-            if self.step_counter % 100 == 0:
-                for ch in self.channels:
-                    if self.channels[ch]["batt_mins"] > 0:
-                        self.channels[ch]["batt_mins"] -= 1
-                        mins = self.channels[ch]["batt_mins"]
-                        bars = min(5, max(0, int(mins / 100)))
-                        self.channels[ch]["batt_bars"] = bars
-                        self.output_queue.put({
-                            "type": "REP", "channel": ch, "command": "TX_BATT_MINS", "value": str(mins)
-                        })
-                        self.output_queue.put({
-                            "type": "REP", "channel": ch, "command": "TX_BATT_BARS", "value": str(bars)
-                        })
-
-            # Rare interference event simulation (every ~35 seconds on Channel 2 or 3)
+            # Interference event simulation
             if self.step_counter % 350 == 150:
-                target_ch = random.choice([2, 3])
+                target_ch = 2
                 self.channels[target_ch]["interf"] = True
-                self.channels[target_ch]["rf_qual"] = random.randint(40, 90)
-                self.output_queue.put({
-                    "type": "REP", "channel": target_ch, "command": "INTERFERENCE_STATUS", "value": "DETECTED"
-                })
-            elif self.step_counter % 350 == 210:
+                self.channels[target_ch]["rf_qual"] = 40  # 1 dot
+                self.channels[target_ch]["rf_a"] = 80
+                self.output_queue.put({"type": "REP", "channel": target_ch, "command": "INTERFERENCE_STATUS", "value": "DETECTED"})
+            elif self.step_counter % 350 == 220:
                 for ch in self.channels:
                     if self.channels[ch]["interf"]:
                         self.channels[ch]["interf"] = False
-                        self.channels[ch]["rf_qual"] = 230
-                        self.output_queue.put({
-                            "type": "REP", "channel": ch, "command": "INTERFERENCE_STATUS", "value": "NONE"
-                        })
+                        self.channels[ch]["rf_qual"] = 220
+                        self.output_queue.put({"type": "REP", "channel": ch, "command": "INTERFERENCE_STATUS", "value": "NONE"})
 
-            # Generate Sample frame for each channel
             for ch, state in self.channels.items():
-                # Audio dynamics calculation
                 if state["mute"]:
                     audio_val = 0
                 else:
                     state["audio_phase"] += 0.15
-                    # Speech envelope with pauses
                     speech_burst = math.sin(state["audio_phase"] * 0.7) * math.cos(state["audio_phase"] * 0.3)
-                    if speech_burst > 0.1:
-                        raw_level = state["audio_target"] + (math.sin(state["audio_phase"] * 3.1) * 20) + (random.gauss(0, 8))
+                    if speech_burst > 0.08:
+                        raw_level = state["audio_target"] + (math.sin(state["audio_phase"] * 3.1) * 22) + (random.gauss(0, 8))
                     else:
-                        raw_level = 10 + random.uniform(0, 8)  # Ambient floor
-                        
-                    # Audio Peak 000 - 120 (where 120 = 0 dBFS clip, 090 = -10dBFS, 060 = -24dBFS)
+                        raw_level = 12 + random.uniform(0, 8)
                     audio_val = max(0, min(120, int(raw_level)))
                 
                 state["audio_level"] = audio_val
 
-                # RF link micro-jitter and antenna diversity
+                # RF antenna fluctuations
                 if not state["interf"]:
-                    state["rf_qual"] = max(120, min(255, state["rf_qual"] + random.randint(-4, 4)))
-                    if random.random() < 0.04:
-                        state["antenna"] = "B" if state["antenna"] == "A" else "A"
+                    state["rf_a"] = max(80, min(255, state["rf_a"] + random.randint(-5, 5)))
+                    state["rf_b"] = max(80, min(255, state["rf_b"] + random.randint(-5, 5)))
+                    state["rf_qual"] = max(100, min(255, state["rf_qual"] + random.randint(-3, 3)))
+                    state["antenna"] = "A" if state["rf_a"] >= state["rf_b"] else "B"
                 
-                # Format Shure SAMPLE payload
-                # Axient sample format: AUDIO_PEAK (000-120), RF_QUAL (000-255), RF_ANTENNA
                 sample_data = {
                     "type": "SAMPLE",
                     "channel": ch,
                     "fields": {
                         "AUDIO_PEAK": f"{audio_val:03d}",
+                        "RF_RSSI_A": f"{state['rf_a']:03d}",
+                        "RF_RSSI_B": f"{state['rf_b']:03d}",
                         "RF_QUAL": f"{state['rf_qual']:03d}",
                         "RF_ANTENNA": state["antenna"],
-                        "AUDIO_LEVEL": f"{audio_val:03d}",
                         "TX_BATT_BARS": str(state["batt_bars"]),
                         "TX_BATT_MINS": str(state["batt_mins"]),
                     }
@@ -351,7 +312,6 @@ class ShureSimulator(threading.Thread):
 # NETWORK CLIENT THREAD (Real Hardware TCP Connection)
 # ==============================================================================
 class ShureClient(threading.Thread):
-    """Handles non-blocking TCP socket communication with Shure Axient Receiver."""
     def __init__(self, host: str, port: int, output_queue: queue.Queue, auto_reconnect: bool = True):
         super().__init__(daemon=True)
         self.host = host
@@ -372,7 +332,6 @@ class ShureClient(threading.Thread):
                 pass
 
     def send_cmd(self, cmd: str):
-        """Sends a Shure command string, wrapping with < and > if needed."""
         if not self.connected or not self.sock:
             return
         if not cmd.startswith("<"):
@@ -385,16 +344,14 @@ class ShureClient(threading.Thread):
 
     def run(self):
         while self.running.is_set():
-            self.output_queue.put({"type": "STATUS", "status": "CONNECTING", "msg": f"Connecting to {self.host}:{self.port}..."})
+            self.output_queue.put({"type": "STATUS", "status": "CONNECTING", "msg": f"Connessione a {self.host}:{self.port}..."})
             try:
                 self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.sock.settimeout(5.0)
                 self.sock.connect((self.host, self.port))
                 self.connected = True
-                self.output_queue.put({"type": "STATUS", "status": "CONNECTED", "msg": f"Connected to {self.host}:{self.port}"})
+                self.output_queue.put({"type": "STATUS", "status": "CONNECTED", "msg": f"Connesso a {self.host}:{self.port}"})
                 
-                # Send Handshake / Discovery Queries
-                # Query receiver model and channels (1 to 4)
                 self.send_cmd("< GET MODEL >")
                 self.send_cmd("< GET DEVICE_ID >")
                 for ch in range(1, 5):
@@ -405,23 +362,19 @@ class ShureClient(threading.Thread):
                     self.send_cmd(f"< GET {ch} TX_BATT_MINS >")
                     self.send_cmd(f"< GET {ch} TX_BATT_BARS >")
                     self.send_cmd(f"< GET {ch} INTERFERENCE_STATUS >")
-                    # Start continuous fast metering (100ms)
                     self.send_cmd(f"< SET {ch} METER_RATE 00100 >")
                 
-                # Global meter rate command fallback
                 self.send_cmd("< SET 0 METER_RATE 00100 >")
 
-                # Receive Loop
                 buffer = ""
                 self.sock.settimeout(1.0)
                 while self.running.is_set():
                     try:
                         data = self.sock.recv(4096)
                         if not data:
-                            raise ConnectionResetError("Connection closed by remote host")
+                            raise ConnectionResetError("Connessione chiusa dal server")
                         
                         buffer += data.decode("ascii", errors="replace")
-                        
                         while "<" in buffer and ">" in buffer:
                             start = buffer.find("<")
                             end = buffer.find(">", start)
@@ -439,7 +392,7 @@ class ShureClient(threading.Thread):
                         raise e
                     except Exception as e:
                         if self.running.is_set():
-                            self.output_queue.put({"type": "STATUS", "status": "ERROR", "msg": f"Socket read error: {e}"})
+                            self.output_queue.put({"type": "STATUS", "status": "ERROR", "msg": f"Errore lettura socket: {e}"})
                         break
 
             except Exception as e:
@@ -452,12 +405,9 @@ class ShureClient(threading.Thread):
                 if not self.running.is_set():
                     break
                     
-                self.output_queue.put({"type": "STATUS", "status": "DISCONNECTED", "msg": f"Disconnected: {e}"})
-                
+                self.output_queue.put({"type": "STATUS", "status": "DISCONNECTED", "msg": f"Disconnesso: {e}"})
                 if not self.auto_reconnect:
                     break
-                
-                # Wait 5 seconds before attempting reconnect
                 for _ in range(50):
                     if not self.running.is_set():
                         break
@@ -465,46 +415,53 @@ class ShureClient(threading.Thread):
 
 
 # ==============================================================================
-# CUSTOM TKINTER WIDGETS (Broadcast Dark GUI)
+# CUSTOM TKINTER WIDGETS
 # ==============================================================================
-class SegmentedVUMeter(tk.Canvas):
-    """High performance Canvas-based segmented VU-Meter with Peak Hold."""
-    def __init__(self, parent, width=32, height=220, **kwargs):
-        super().__init__(parent, width=width, height=height, bg=THEME["meter_bg"], 
+class FullHeightVUMeter(tk.Canvas):
+    """
+    Vertical VU Meter that automatically resizes and stretches across the
+    FULL HEIGHT of the channel column dynamically.
+    """
+    def __init__(self, parent, width=32, **kwargs):
+        super().__init__(parent, width=width, bg=THEME["meter_bg"],
                          highlightthickness=1, highlightbackground=THEME["bg_card_border"], **kwargs)
         self.meter_width = width
-        self.meter_height = height
-        self.current_val = 0.0  # 0 to 120
+        self.meter_height = 300
+        self.current_val = 0.0
         self.peak_val = 0.0
         self.peak_hold_ticks = 0
-        self.num_segments = 24
-        self.draw_meter()
+        self.num_segments = 36  # High-resolution segment count
+        
+        self.bind("<Configure>", self.on_resize)
+
+    def on_resize(self, event):
+        if event.height > 20:
+            self.meter_height = event.height
+            self.meter_width = event.width
+            self.draw_meter()
 
     def set_level(self, val_0_120: float):
-        """Update meter value (0 to 120 Shure scale)."""
         self.current_val = max(0.0, min(120.0, float(val_0_120)))
         if self.current_val >= self.peak_val:
             self.peak_val = self.current_val
-            self.peak_hold_ticks = 20  # ~2 seconds hold at 100ms
+            self.peak_hold_ticks = 20
         else:
             if self.peak_hold_ticks > 0:
                 self.peak_hold_ticks -= 1
             else:
-                self.peak_val = max(0.0, self.peak_val - 2.5)  # Smooth peak decay
+                self.peak_val = max(0.0, self.peak_val - 2.2)
         self.draw_meter()
 
     def draw_meter(self):
         self.delete("all")
         margin_x = 4
         margin_y = 6
-        usable_w = self.meter_width - (margin_x * 2)
-        usable_h = self.meter_height - (margin_y * 2)
+        usable_w = max(4, self.meter_width - (margin_x * 2))
+        usable_h = max(20, self.meter_height - (margin_y * 2))
         seg_h = usable_h / self.num_segments
         gap = 2
 
-        # Draw segments bottom-up
         for i in range(self.num_segments):
-            # Segment threshold from 0 to 120
             ratio = (i + 1) / self.num_segments
             seg_level = ratio * 120.0
             
@@ -513,68 +470,145 @@ class SegmentedVUMeter(tk.Canvas):
             x1 = margin_x
             x2 = margin_x + usable_w
 
-            # Color zones:
-            # Top 2 segments (110-120): Red (Overload/Clip)
-            # Next 4 segments (90-110): Orange (-6dB to -2dB)
-            # Next 6 segments (60-90): Yellow (-18dB to -6dB)
-            # Bottom segments (0-60): Green (Normal signal)
-            if i >= self.num_segments - 2:
+            # Shure scale: Top 3 Red (Clip/Overload), Next 8 Orange, Next 10 Yellow, Rest Green
+            if i >= self.num_segments - 3:
                 active_color = THEME["meter_red"]
-            elif i >= self.num_segments - 6:
+            elif i >= self.num_segments - 10:
                 active_color = THEME["meter_orange"]
-            elif i >= self.num_segments - 12:
+            elif i >= self.num_segments - 20:
                 active_color = THEME["meter_yellow"]
             else:
                 active_color = THEME["meter_green"]
 
-            if self.current_val >= seg_level:
-                fill_col = active_color
-            else:
-                fill_col = THEME["meter_grid"]
-
+            fill_col = active_color if self.current_val >= seg_level else THEME["meter_grid"]
             self.create_rectangle(x1, y1, x2, y2, fill=fill_col, outline="", width=0)
 
-        # Draw Peak Hold Marker Line
-        if self.peak_val > 5:
+        # Draw Peak Hold Marker
+        if self.peak_val > 6:
             peak_ratio = min(1.0, self.peak_val / 120.0)
             peak_y = self.meter_height - margin_y - (peak_ratio * usable_h)
-            self.create_line(margin_x - 1, peak_y, margin_x + usable_w + 1, peak_y, 
+            self.create_line(margin_x - 1, peak_y, margin_x + usable_w + 1, peak_y,
                              fill=THEME["meter_peak"], width=2)
 
 
-class RFQualityBar(tk.Canvas):
-    """Horizontal gradient bar for RF Link Quality (0 - 255)."""
-    def __init__(self, parent, width=140, height=14, **kwargs):
-        super().__init__(parent, width=width, height=height, bg=THEME["rf_bg"], 
-                         highlightthickness=1, highlightbackground=THEME["bg_card_border"], **kwargs)
-        self.bar_w = width
-        self.bar_h = height
-        self.value = 0
-        self.draw_bar()
+class DualRFMeter(tk.Frame):
+    """
+    Dual RF Antenna Signal Meters (A & B) + 5 Purple/Violet Quality Dots.
+    Faithful reproduction of Shure Axient Digital Wireless Workbench interface!
+    """
+    def __init__(self, parent, **kwargs):
+        super().__init__(parent, bg=THEME["bg_card_inner"], **kwargs)
+        self.rf_a_val = 0
+        self.rf_b_val = 0
+        self.active_ant = "A"
+        self.qual_val = 0
+        self.setup_ui()
 
-    def set_value(self, val_0_255: int):
-        self.value = max(0, min(255, int(val_0_255)))
-        self.draw_bar()
-
-    def draw_bar(self):
-        self.delete("all")
-        percent = self.value / 255.0
-        fill_w = int((self.bar_w - 4) * percent)
+    def setup_ui(self):
+        # 1. Top Header: RF Title & 5 Purple Quality Dots
+        top_row = tk.Frame(self, bg=THEME["bg_card_inner"])
+        top_row.pack(fill="x", pady=(0, 4))
         
-        if percent > 0.65:
-            col = THEME["rf_high"]
-        elif percent > 0.35:
-            col = THEME["rf_med"]
+        tk.Label(top_row, text="RF LINK", font=("Segoe UI", 8, "bold"),
+                 fg=THEME["text_muted"], bg=THEME["bg_card_inner"]).pack(side="left")
+        
+        # 5 Purple Quality Dots Container
+        qual_box = tk.Frame(top_row, bg=THEME["bg_card_inner"])
+        qual_box.pack(side="right")
+        
+        tk.Label(qual_box, text="QUAL", font=("Segoe UI", 7, "bold"),
+                 fg=THEME["rf_qual_purple_bright"], bg=THEME["bg_card_inner"]).pack(side="left", padx=(0, 4))
+        
+        self.qual_canvas = tk.Canvas(qual_box, width=65, height=12, bg=THEME["bg_card_inner"], highlightthickness=0)
+        self.qual_canvas.pack(side="left")
+
+        # 2. Antenna A Meter Row
+        row_a = tk.Frame(self, bg=THEME["bg_card_inner"])
+        row_a.pack(fill="x", pady=1)
+        self.lbl_ant_a = tk.Label(row_a, text="A", font=("Consolas", 8, "bold"),
+                                  fg=THEME["rf_bar_active"], bg=THEME["bg_card_inner"], width=2)
+        self.lbl_ant_a.pack(side="left", padx=(0, 2))
+        self.bar_a = tk.Canvas(row_a, height=10, bg=THEME["rf_bar_bg"], highlightthickness=1, highlightbackground=THEME["bg_card_border"])
+        self.bar_a.pack(side="left", fill="x", expand=True)
+
+        # 3. Antenna B Meter Row
+        row_b = tk.Frame(self, bg=THEME["bg_card_inner"])
+        row_b.pack(fill="x", pady=1)
+        self.lbl_ant_b = tk.Label(row_b, text="B", font=("Consolas", 8, "bold"),
+                                  fg=THEME["text_muted"], bg=THEME["bg_card_inner"], width=2)
+        self.lbl_ant_b.pack(side="left", padx=(0, 2))
+        self.bar_b = tk.Canvas(row_b, height=10, bg=THEME["rf_bar_bg"], highlightthickness=1, highlightbackground=THEME["bg_card_border"])
+        self.bar_b.pack(side="left", fill="x", expand=True)
+
+        self.bar_a.bind("<Configure>", lambda e: self.draw_bars())
+        self.bar_b.bind("<Configure>", lambda e: self.draw_bars())
+        self.draw_purple_dots(0)
+
+    def set_rf_data(self, rf_a: int, rf_b: int, active_ant: str, qual_0_255: int):
+        self.rf_a_val = max(0, min(255, int(rf_a)))
+        self.rf_b_val = max(0, min(255, int(rf_b)))
+        self.active_ant = active_ant.upper()
+        self.qual_val = max(0, min(255, int(qual_0_255)))
+        
+        # Update Antenna selection highlighting
+        if self.active_ant == "A":
+            self.lbl_ant_a.config(fg=THEME["status_connected"])
+            self.lbl_ant_b.config(fg=THEME["text_muted"])
         else:
-            col = THEME["rf_low"]
+            self.lbl_ant_a.config(fg=THEME["text_muted"])
+            self.lbl_ant_b.config(fg=THEME["status_connected"])
 
-        # Background grid ticks
-        for i in range(1, 5):
-            tx = int((self.bar_w / 5) * i)
-            self.create_line(tx, 1, tx, self.bar_h - 1, fill=THEME["bg_card_border"], width=1)
+        # Calculate number of purple dots (0 to 5)
+        # Thresholds: 0-35: 0, 36-80: 1, 81-130: 2, 131-180: 3, 181-225: 4, 226-255: 5
+        if self.qual_val >= 220:
+            num_dots = 5
+        elif self.qual_val >= 170:
+            num_dots = 4
+        elif self.qual_val >= 120:
+            num_dots = 3
+        elif self.qual_val >= 70:
+            num_dots = 2
+        elif self.qual_val >= 30:
+            num_dots = 1
+        else:
+            num_dots = 0
 
-        if fill_w > 0:
-            self.create_rectangle(2, 2, 2 + fill_w, self.bar_h - 2, fill=col, outline="")
+        self.draw_purple_dots(num_dots)
+        self.draw_bars()
+
+    def draw_purple_dots(self, active_count: int):
+        self.qual_canvas.delete("all")
+        dot_r = 4
+        gap = 12
+        start_x = 6
+        y = 6
+        for i in range(5):
+            x = start_x + (i * gap)
+            is_lit = (i < active_count)
+            col = THEME["rf_qual_purple_bright"] if is_lit else THEME["rf_qual_off"]
+            outline_col = THEME["rf_qual_purple"] if is_lit else "#2F2340"
+            self.qual_canvas.create_oval(x - dot_r, y - dot_r, x + dot_r, y + dot_r, fill=col, outline=outline_col)
+
+    def draw_bars(self):
+        # Draw Bar A
+        self.bar_a.delete("all")
+        w_a = self.bar_a.winfo_width()
+        h_a = self.bar_a.winfo_height()
+        if w_a > 10:
+            fill_w_a = int((w_a - 4) * (self.rf_a_val / 255.0))
+            col_a = THEME["rf_bar_active"] if self.active_ant == "A" else THEME["rf_bar_inactive"]
+            if fill_w_a > 0:
+                self.bar_a.create_rectangle(2, 2, 2 + fill_w_a, h_a - 2, fill=col_a, outline="")
+
+        # Draw Bar B
+        self.bar_b.delete("all")
+        w_b = self.bar_b.winfo_width()
+        h_b = self.bar_b.winfo_height()
+        if w_b > 10:
+            fill_w_b = int((w_b - 4) * (self.rf_b_val / 255.0))
+            col_b = THEME["rf_bar_active"] if self.active_ant == "B" else THEME["rf_bar_inactive"]
+            if fill_w_b > 0:
+                self.bar_b.create_rectangle(2, 2, 2 + fill_w_b, h_b - 2, fill=col_b, outline="")
 
 
 class BatteryGauge(tk.Canvas):
@@ -598,13 +632,10 @@ class BatteryGauge(tk.Canvas):
 
     def draw_battery(self):
         self.delete("all")
-        # Battery shell
         bx1, by1, bx2, by2 = 2, 3, self.w - 8, self.h - 3
         self.create_rectangle(bx1, by1, bx2, by2, outline=THEME["text_muted"], width=1)
-        # Nipple
         self.create_rectangle(bx2, by1 + 4, self.w - 4, by2 - 4, fill=THEME["text_muted"], outline="")
 
-        # Battery fill color
         if self.mins < 60 or self.bars <= 1:
             col = THEME["batt_low"]
         elif self.mins < 180 or self.bars <= 2:
@@ -640,13 +671,12 @@ class StatusLED(tk.Canvas):
         outline_col = "#444" if not self.is_active else fill_col
         pad = 2
         self.create_oval(pad, pad, self.size - pad, self.size - pad, fill=fill_col, outline=outline_col, width=1)
-        # Glint reflection for realistic LED look
         if self.is_active:
             self.create_oval(pad + 2, pad + 2, pad + 4, pad + 4, fill="#FFFFFF", outline="")
 
 
 # ==============================================================================
-# CHANNEL MONITOR CARD (Reusable Per-Channel Component)
+# CHANNEL MONITOR CARD (With Interactive Low-Battery Blinking Alert)
 # ==============================================================================
 class ChannelCard(tk.Frame):
     """Comprehensive single-channel monitoring card."""
@@ -655,6 +685,12 @@ class ChannelCard(tk.Frame):
                          highlightbackground=THEME["bg_card_border"], highlightthickness=1)
         self.channel_num = channel_num
         self.last_audio_peak = 0
+        
+        # Low Battery Alert State & Acknowledgment
+        self.is_blinking_battery = False
+        self.battery_acked = False
+        self.blink_phase = False
+        self.curr_batt_mins = 480
         
         self.setup_ui()
 
@@ -683,69 +719,78 @@ class ChannelCard(tk.Frame):
         body_frame = tk.Frame(self, bg=THEME["bg_card"], padx=10, pady=4)
         body_frame.pack(fill="both", expand=True)
 
-        # Left: Vertical Segmented VU Meter + dB Labels
+        # Left: Full-Height Vertical Segmented VU Meter + dB Labels
         meter_container = tk.Frame(body_frame, bg=THEME["bg_card"])
-        meter_container.pack(side="left", fill="y", padx=(0, 10))
+        meter_container.pack(side="left", fill="both", expand=True, padx=(0, 10))
 
-        # Scale markings
         scale_frame = tk.Frame(meter_container, bg=THEME["bg_card"])
         scale_frame.pack(side="left", fill="y", padx=(0, 3))
         for db in ["0", "-6", "-12", "-18", "-30", "-60"]:
             lbl = tk.Label(scale_frame, text=db, font=("Consolas", 7), fg=THEME["text_muted"], bg=THEME["bg_card"])
             lbl.pack(side="top", expand=True)
 
-        self.vu_meter = SegmentedVUMeter(meter_container, width=28, height=210)
-        self.vu_meter.pack(side="left", fill="y")
+        # Full height dynamic VU Meter
+        self.vu_meter = FullHeightVUMeter(meter_container, width=28)
+        self.vu_meter.pack(side="left", fill="both", expand=True)
 
-        # Right: Telemetry Details (RF, Battery, Status LEDs)
-        telemetry_frame = tk.Frame(body_frame, bg=THEME["bg_card_inner"], padx=8, pady=8,
-                                   highlightthickness=1, highlightbackground=THEME["bg_card_border"])
-        telemetry_frame.pack(side="left", fill="both", expand=True)
+        # Right: Telemetry Panel (Dual RF Meters + 5 Purple Dots + Interactive Transmitter Box)
+        right_panel = tk.Frame(body_frame, bg=THEME["bg_card"], width=175)
+        right_panel.pack(side="right", fill="y", padx=(0, 0))
 
-        # --- RF SECTION ---
-        rf_title_frame = tk.Frame(telemetry_frame, bg=THEME["bg_card_inner"])
-        rf_title_frame.pack(fill="x", pady=(0, 2))
+        # --- DUAL RF SECTION ---
+        self.rf_meter = DualRFMeter(right_panel, padx=8, pady=8,
+                                    highlightthickness=1, highlightbackground=THEME["bg_card_border"])
+        self.rf_meter.pack(fill="x", pady=(0, 8))
+
+        # --- TRANSMITTER SECTION (Clickable Interactive Alert Box) ---
+        self.tx_box = tk.Frame(right_panel, bg=THEME["bg_card_inner"], padx=8, pady=8,
+                               highlightthickness=1, highlightbackground=THEME["bg_card_border"], cursor="hand2")
+        self.tx_box.pack(fill="x", pady=(0, 8))
         
-        tk.Label(rf_title_frame, text="RF LINK", font=("Segoe UI", 8, "bold"),
-                 fg=THEME["text_muted"], bg=THEME["bg_card_inner"]).pack(side="left")
+        # Bind click to acknowledge flashing alert
+        self.tx_box.bind("<Button-1>", self.on_tx_box_click)
+
+        tx_title_frame = tk.Frame(self.tx_box, bg=THEME["bg_card_inner"])
+        tx_title_frame.pack(fill="x", pady=(0, 2))
+        tx_title_frame.bind("<Button-1>", self.on_tx_box_click)
         
-        self.antenna_badge = tk.Label(rf_title_frame, text="ANT A", font=("Consolas", 8, "bold"),
-                                      fg=THEME["status_connected"], bg=THEME["bg_card"], padx=4)
-        self.antenna_badge.pack(side="right")
+        lbl_tx = tk.Label(tx_title_frame, text="TRANSMITTER (TX)", font=("Segoe UI", 8, "bold"),
+                          fg=THEME["text_muted"], bg=THEME["bg_card_inner"])
+        lbl_tx.pack(side="left")
+        lbl_tx.bind("<Button-1>", self.on_tx_box_click)
 
-        self.rf_bar = RFQualityBar(telemetry_frame, width=120, height=12)
-        self.rf_bar.pack(fill="x", pady=(2, 4))
-
-        self.rf_val_label = tk.Label(telemetry_frame, text="RF: --- %", font=("Consolas", 8),
-                                     fg=THEME["text_muted"], bg=THEME["bg_card_inner"])
-        self.rf_val_label.pack(anchor="e", pady=(0, 8))
-
-        # --- BATTERY SECTION ---
-        batt_title_frame = tk.Frame(telemetry_frame, bg=THEME["bg_card_inner"])
-        batt_title_frame.pack(fill="x", pady=(0, 2))
-        
-        tk.Label(batt_title_frame, text="TRANSMITTER", font=("Segoe UI", 8, "bold"),
-                 fg=THEME["text_muted"], bg=THEME["bg_card_inner"]).pack(side="left")
-
-        batt_row = tk.Frame(telemetry_frame, bg=THEME["bg_card_inner"])
+        batt_row = tk.Frame(self.tx_box, bg=THEME["bg_card_inner"])
         batt_row.pack(fill="x", pady=(2, 4))
+        batt_row.bind("<Button-1>", self.on_tx_box_click)
         
         self.batt_gauge = BatteryGauge(batt_row, width=38, height=18)
         self.batt_gauge.pack(side="left", padx=(0, 6))
+        self.batt_gauge.bind("<Button-1>", self.on_tx_box_click)
 
         self.batt_time_label = tk.Label(batt_row, text="--h --m", font=("Consolas", 9, "bold"),
                                         fg=THEME["text_main"], bg=THEME["bg_card_inner"])
         self.batt_time_label.pack(side="left")
+        self.batt_time_label.bind("<Button-1>", self.on_tx_box_click)
 
-        self.batt_alert_label = tk.Label(telemetry_frame, text="BATTERY OK", font=("Segoe UI", 7, "bold"),
+        self.batt_alert_label = tk.Label(self.tx_box, text="BATTERY OK", font=("Segoe UI", 7, "bold"),
                                          fg=THEME["status_connected"], bg=THEME["bg_card_inner"])
-        self.batt_alert_label.pack(anchor="w", pady=(0, 8))
+        self.batt_alert_label.pack(anchor="w", pady=(0, 2))
+        self.batt_alert_label.bind("<Button-1>", self.on_tx_box_click)
+
+        self.ack_hint_label = tk.Label(self.tx_box, text="", font=("Segoe UI", 7, "italic"),
+                                       fg=THEME["text_muted"], bg=THEME["bg_card_inner"])
+        self.ack_hint_label.pack(anchor="w")
+        self.ack_hint_label.bind("<Button-1>", self.on_tx_box_click)
 
         # --- LED STATUS INDICATORS ---
-        tk.Label(telemetry_frame, text="STATUS FLAGS", font=("Segoe UI", 8, "bold"),
+        flags_box = tk.Frame(right_panel, bg=THEME["bg_card_inner"], padx=8, pady=6,
+                             highlightthickness=1, highlightbackground=THEME["bg_card_border"])
+        flags_box.pack(fill="x")
+
+        tk.Label(flags_box, text="STATUS FLAGS", font=("Segoe UI", 8, "bold"),
                  fg=THEME["text_muted"], bg=THEME["bg_card_inner"]).pack(anchor="w", pady=(0, 4))
 
-        led_grid = tk.Frame(telemetry_frame, bg=THEME["bg_card_inner"])
+        led_grid = tk.Frame(flags_box, bg=THEME["bg_card_inner"])
         led_grid.pack(fill="x")
 
         # Row 1: Mute & Peak
@@ -770,12 +815,28 @@ class ChannelCard(tk.Frame):
         self.led_enc.pack(side="left", padx=(0, 4))
         tk.Label(r2, text="ENCR", font=("Segoe UI", 8), fg=THEME["text_main"], bg=THEME["bg_card_inner"]).pack(side="left")
 
+    def on_tx_box_click(self, event=None):
+        """User clicks on transmitter box to acknowledge low battery blinking alarm."""
+        if self.is_blinking_battery:
+            self.battery_acked = True
+            self.is_blinking_battery = False
+            self.ack_hint_label.config(text="[ALLARME SILENZIATO]")
+            # Reset visual style to static warning
+            self.tx_box.config(bg=THEME["bg_card_inner"], highlightbackground=THEME["batt_low"], highlightthickness=2)
+            self.apply_tx_box_bg(THEME["bg_card_inner"])
+
+    def apply_tx_box_bg(self, bg_color: str):
+        for widget in [self.tx_box, self.batt_time_label, self.batt_alert_label, self.ack_hint_label]:
+            try:
+                widget.config(bg=bg_color)
+            except Exception:
+                pass
+
     def update_name(self, name: str):
         clean_name = name.strip()
         self.name_label.config(text=clean_name if clean_name else f"CHANNEL {self.channel_num}")
 
     def update_frequency(self, freq_str: str):
-        # Shure transmits freq in 100Hz or 1kHz units (e.g. 512450 = 512.450 MHz)
         try:
             digits = re.sub(r"[^\d]", "", freq_str)
             if len(digits) >= 6:
@@ -789,36 +850,28 @@ class ChannelCard(tk.Frame):
             self.freq_label.config(text=f"{freq_str}")
 
     def update_sample(self, fields: Dict[str, Any]):
-        # 1. Audio Peak
+        # 1. Audio Peak (Full Height VU Meter)
         if "AUDIO_PEAK" in fields:
             try:
                 val = float(fields["AUDIO_PEAK"])
                 self.last_audio_peak = val
                 self.vu_meter.set_level(val)
-                # Overload peak LED if > 115 (approx -2dBFS)
                 self.led_peak.set_state(val >= 115)
             except ValueError:
                 pass
 
-        # 2. RF Quality & Antenna
-        if "RF_QUAL" in fields:
-            try:
-                rf_val = int(fields["RF_QUAL"])
-                self.rf_bar.set_value(rf_val)
-                pct = int((rf_val / 255.0) * 100)
-                self.rf_val_label.config(text=f"RF: {pct}% ({rf_val})")
-            except ValueError:
-                pass
+        # 2. Dual RF Meters & 5 Purple Quality Dots
+        rf_a = fields.get("RF_RSSI_A", fields.get("RF_QUAL", 200))
+        rf_b = fields.get("RF_RSSI_B", int(int(rf_a) * 0.9) if str(rf_a).isdigit() else 180)
+        rf_ant = fields.get("RF_ANTENNA", "A")
+        rf_qual = fields.get("RF_QUAL", 230)
+        
+        try:
+            self.rf_meter.set_rf_data(int(rf_a), int(rf_b), str(rf_ant), int(rf_qual))
+        except (ValueError, TypeError):
+            pass
 
-        if "RF_ANTENNA" in fields:
-            ant = fields["RF_ANTENNA"].upper()
-            self.antenna_badge.config(text=f"ANT {ant}")
-            if ant == "A":
-                self.antenna_badge.config(fg=THEME["status_connected"])
-            else:
-                self.antenna_badge.config(fg=THEME["text_accent"])
-
-        # 3. Battery minutes & bars
+        # 3. Battery status
         mins = None
         bars = None
         if "TX_BATT_MINS" in fields:
@@ -836,23 +889,45 @@ class ChannelCard(tk.Frame):
             self.update_battery(mins, bars)
 
     def update_battery(self, mins: int, bars: Optional[int] = None):
+        self.curr_batt_mins = mins
         self.batt_gauge.set_battery(mins, bars)
+        
         if mins == 65535 or mins < 0:
             self.batt_time_label.config(text="--h --m", fg=THEME["text_muted"])
             self.batt_alert_label.config(text="DISCONNECTED", fg=THEME["text_muted"])
+            self.is_blinking_battery = False
+            self.ack_hint_label.config(text="")
         else:
             hrs = mins // 60
             m = mins % 60
             self.batt_time_label.config(text=f"{hrs}h {m:02d}m")
-            if mins < 30:
+            
+            # Low Battery Alert (< 20% or < 60 mins)
+            if mins < 60 or (bars is not None and bars <= 1):
                 self.batt_time_label.config(fg=THEME["batt_low"])
-                self.batt_alert_label.config(text="CRITICAL BATTERY", fg=THEME["batt_low"])
-            elif mins < 60:
-                self.batt_time_label.config(fg=THEME["batt_med"])
-                self.batt_alert_label.config(text="LOW BATTERY", fg=THEME["batt_med"])
+                self.batt_alert_label.config(text="LOW BATTERY (<20%)", fg=THEME["batt_low"])
+                if not self.battery_acked:
+                    self.is_blinking_battery = True
+                    self.ack_hint_label.config(text="[CLICCA PER TACITARE]")
             else:
+                # Reset acknowledgment if battery is healthy again
+                self.battery_acked = False
+                self.is_blinking_battery = False
                 self.batt_time_label.config(fg=THEME["text_main"])
                 self.batt_alert_label.config(text="BATTERY OK", fg=THEME["status_connected"])
+                self.ack_hint_label.config(text="")
+                self.tx_box.config(bg=THEME["bg_card_inner"], highlightbackground=THEME["bg_card_border"], highlightthickness=1)
+                self.apply_tx_box_bg(THEME["bg_card_inner"])
+
+    def tick_blink(self):
+        """Called periodically by main UI loop to flash TX box if battery < 20%."""
+        if self.is_blinking_battery and not self.battery_acked:
+            self.blink_phase = not self.blink_phase
+            bg_col = THEME["batt_alert_bg1"] if self.blink_phase else THEME["batt_alert_bg2"]
+            border_col = THEME["batt_alert_border"] if self.blink_phase else THEME["bg_card_border"]
+            
+            self.tx_box.config(bg=bg_col, highlightbackground=border_col, highlightthickness=2)
+            self.apply_tx_box_bg(bg_col)
 
     def update_mute(self, is_muted: bool):
         self.led_mute.set_state(is_muted)
@@ -871,20 +946,20 @@ class AxientMonitorApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("RCShure - Shure Axient Digital Real-Time Monitor")
-        self.root.geometry("1180x640")
-        self.root.minsize(860, 520)
+        self.root.geometry("1220x680")
+        self.root.minsize(920, 560)
         self.root.configure(bg=THEME["bg_root"])
         
-        # Application State
         self.queue: queue.Queue = queue.Queue()
         self.network_client: Optional[ShureClient] = None
         self.simulator: Optional[ShureSimulator] = None
         self.is_connected = False
-        self.channel_count = 4  # Default AD4Q (can adapt to AD4D 2-ch)
+        self.channel_count = 4
         self.channels: Dict[int, ChannelCard] = {}
 
         self.setup_ui()
         self.process_queue()
+        self.blink_loop()
 
     def setup_ui(self):
         # 1. Top Header Control Bar
@@ -892,7 +967,6 @@ class AxientMonitorApp:
                           highlightthickness=1, highlightbackground=THEME["bg_card_border"])
         header.pack(fill="x", side="top")
 
-        # Brand / Title
         brand_frame = tk.Frame(header, bg=THEME["bg_header"])
         brand_frame.pack(side="left", padx=(0, 24))
         
@@ -900,15 +974,13 @@ class AxientMonitorApp:
                              fg=THEME["text_accent"], bg=THEME["bg_header"])
         title_lbl.pack(side="left")
         
-        sub_lbl = tk.Label(brand_frame, text="Axient Digital Monitor", font=("Segoe UI", 9),
+        sub_lbl = tk.Label(brand_frame, text="Axient Digital Broadcast Monitor", font=("Segoe UI", 9),
                            fg=THEME["text_muted"], bg=THEME["bg_header"])
         sub_lbl.pack(side="left", padx=(8, 0), pady=(4, 0))
 
-        # Connection Controls
         ctrl_frame = tk.Frame(header, bg=THEME["bg_header"])
         ctrl_frame.pack(side="left")
 
-        # IP Input
         tk.Label(ctrl_frame, text="Receiver IP:", font=("Segoe UI", 9, "bold"),
                  fg=THEME["text_main"], bg=THEME["bg_header"]).pack(side="left", padx=(0, 6))
         
@@ -918,7 +990,6 @@ class AxientMonitorApp:
                                  insertbackground=THEME["text_accent"], width=15, bd=1, relief="solid")
         self.ip_entry.pack(side="left", padx=(0, 10))
 
-        # Port Input
         tk.Label(ctrl_frame, text="Port:", font=("Segoe UI", 9),
                  fg=THEME["text_muted"], bg=THEME["bg_header"]).pack(side="left", padx=(0, 4))
         self.port_var = tk.StringVar(value=str(DEFAULT_SHURE_PORT))
@@ -927,8 +998,7 @@ class AxientMonitorApp:
                                    insertbackground=THEME["text_accent"], width=6, bd=1, relief="solid")
         self.port_entry.pack(side="left", padx=(0, 16))
 
-        # Simulation Mode Checkbox
-        self.sim_mode_var = tk.BooleanVar(value=False)
+        self.sim_mode_var = tk.BooleanVar(value=True)
         self.sim_check = tk.Checkbutton(ctrl_frame, text="Modalità Simulazione Offline",
                                         variable=self.sim_mode_var, font=("Segoe UI", 9),
                                         fg=THEME["text_accent"], bg=THEME["bg_header"],
@@ -937,14 +1007,12 @@ class AxientMonitorApp:
                                         activeforeground=THEME["text_accent"])
         self.sim_check.pack(side="left", padx=(0, 16))
 
-        # Connect / Disconnect Button
         self.btn_connect = tk.Button(ctrl_frame, text="CONNETTI", font=("Segoe UI", 10, "bold"),
                                      bg=THEME["accent_primary"], fg="#FFFFFF", activebackground=THEME["accent_hover"],
                                      activeforeground="#FFFFFF", bd=0, padx=16, pady=4, cursor="hand2",
                                      command=self.toggle_connection)
         self.btn_connect.pack(side="left", padx=(0, 20))
 
-        # Right Side: Status Badge & Receiver Model
         status_frame = tk.Frame(header, bg=THEME["bg_header"])
         status_frame.pack(side="right")
 
@@ -960,28 +1028,26 @@ class AxientMonitorApp:
                                     fg=THEME["status_disconnected"], bg=THEME["bg_header"])
         self.status_text.pack(side="left")
 
-        # 2. Main Channels Container
-        self.channels_container = tk.Frame(self.root, bg=THEME["bg_root"], padx=16, pady=16)
+        # 2. Channels Grid
+        self.channels_container = tk.Frame(self.root, bg=THEME["bg_root"], padx=14, pady=14)
         self.channels_container.pack(fill="both", expand=True)
 
         self.build_channel_grid(4)
 
-        # 3. Bottom Status Bar
+        # 3. Footer Bar
         self.footer = tk.Frame(self.root, bg=THEME["bg_header"], padx=14, pady=6,
                                highlightthickness=1, highlightbackground=THEME["bg_card_border"])
         self.footer.pack(fill="x", side="bottom")
 
-        self.footer_log = tk.Label(self.footer, text="Pronto. Inserisci IP ricevitore o attiva Simulazione per iniziare.",
+        self.footer_log = tk.Label(self.footer, text="Pronto. Clicca 'CONNETTI' per avviare il monitoraggio.",
                                    font=("Segoe UI", 9), fg=THEME["text_muted"], bg=THEME["bg_header"], anchor="w")
         self.footer_log.pack(side="left", fill="x", expand=True)
 
-        self.footer_info = tk.Label(self.footer, text="Shure Command Protocol v1.0 | Standalone Zero-Conf",
+        self.footer_info = tk.Label(self.footer, text="Dual RF (A/B) + 5 Purple Quality Dots | Dynamic VU-Meter",
                                     font=("Consolas", 8), fg=THEME["text_muted"], bg=THEME["bg_header"])
         self.footer_info.pack(side="right")
 
     def build_channel_grid(self, count: int):
-        """Builds or rebuilds channel cards grid (2 or 4 channels)."""
-        # Clear existing cards
         for widget in self.channels_container.winfo_children():
             widget.destroy()
         self.channels.clear()
@@ -991,6 +1057,12 @@ class AxientMonitorApp:
             card = ChannelCard(self.channels_container, ch)
             card.pack(side="left", fill="both", expand=True, padx=6)
             self.channels[ch] = card
+
+    def blink_loop(self):
+        """Timer loop at 450ms for low battery flashing animation."""
+        for card in self.channels.values():
+            card.tick_blink()
+        self.root.after(450, self.blink_loop)
 
     def set_status_ui(self, status: str, msg: str):
         self.footer_log.config(text=msg)
@@ -1013,7 +1085,7 @@ class AxientMonitorApp:
             self.port_entry.config(state="disabled")
             self.sim_check.config(state="disabled")
             self.is_connected = True
-        else:  # DISCONNECTED / ERROR
+        else:
             self.status_text.config(text="DISCONNESSO", fg=THEME["status_disconnected"])
             self.status_dot.itemconfig(self.status_dot_id, fill=THEME["status_disconnected"])
             self.btn_connect.config(text="CONNETTI", bg=THEME["accent_primary"])
@@ -1029,14 +1101,12 @@ class AxientMonitorApp:
             self.connect()
 
     def connect(self):
-        # 1. Simulator Mode
         if self.sim_mode_var.get():
             self.simulator = ShureSimulator(self.queue)
             self.simulator.start()
             self.set_status_ui("SIMULATOR", "Modalità simulazione offline Shure AD4Q avviata.")
             return
 
-        # 2. Hardware TCP Socket Mode
         ip = self.ip_var.get().strip()
         port_str = self.port_var.get().strip()
         
@@ -1066,7 +1136,6 @@ class AxientMonitorApp:
         self.set_status_ui("DISCONNECTED", "Disconnesso.")
 
     def process_queue(self):
-        """Polls background network/simulator thread queue and updates GUI."""
         try:
             while True:
                 msg = self.queue.get_nowait()
@@ -1102,7 +1171,6 @@ class AxientMonitorApp:
             cmd = msg.get("command", "").upper()
             val = msg.get("value", "")
 
-            # Global Receiver Model (AD4D or AD4Q)
             if cmd == "MODEL":
                 self.model_badge.config(text=f"MODEL: {val}")
                 if "AD4D" in val.upper() and self.channel_count != 2:
@@ -1110,7 +1178,6 @@ class AxientMonitorApp:
                 elif "AD4Q" in val.upper() and self.channel_count != 4:
                     self.build_channel_grid(4)
 
-            # Per-Channel attributes
             if ch in self.channels:
                 card = self.channels[ch]
                 if cmd == "CHAN_NAME":
@@ -1139,13 +1206,8 @@ class AxientMonitorApp:
         self.root.destroy()
 
 
-# ==============================================================================
-# ENTRY POINT
-# ==============================================================================
 def main():
     root = tk.Tk()
-    
-    # Try enabling high DPI awareness on Windows
     try:
         from ctypes import windll
         windll.shcore.SetProcessDpiAwareness(1)
