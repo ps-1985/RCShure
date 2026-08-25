@@ -5,11 +5,10 @@ RCShure - Shure Axient Digital (AD4D / AD4Q) Real-Time Monitor & Simulator
 Standalone Windows Application (Zero external dependencies, Python Standard Library only)
 
 Features:
-- Dynamic Responsive Layout with Full Window Resizing
-- EDIT LAYOUT Mode: Interactive synchronized resizing of all section heights across all channels (1 to 4)
-- Synchronized width divider between VU Meter and Telemetry Panels
+- Fixed-Width Broadcast VU Meter (Non-resizable width, Full-Height Responsive Canvas)
+- 150% Scaled Large Typography & High-Visibility UI Elements
+- EDIT LAYOUT Mode: Synchronized horizontal draggable dividers across all channels (1 to 4)
 - Dual RF Antenna (A & B) Meters + 5 Purple Quality Dots (Axient Digital Standard)
-- Full-Height High-Resolution Segmented VU Meter with Peak Hold
 - RF Drop Event Logger in each channel (timestamps events when RF Quality <= 1/5)
 - Interactive Low-Battery Blinking Alert with Click-to-Acknowledge
 """
@@ -24,7 +23,7 @@ import datetime
 import math
 import random
 import re
-from typing import Dict, Any, Optional, List, Callable
+from typing import Dict, Any, Optional, List
 
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -96,8 +95,6 @@ DEFAULT_SHURE_PORT = 2202
 # PROTOCOL PARSER
 # ==============================================================================
 class ShureParser:
-    """Parses Shure Command String protocol messages."""
-    
     @staticmethod
     def parse_message(raw_msg: str) -> Optional[Dict[str, Any]]:
         raw_msg = raw_msg.strip()
@@ -424,7 +421,7 @@ class ShureClient(threading.Thread):
 class SynchronizedHorizontalDivider(tk.Canvas):
     """
     Horizontal draggable divider between sections in the right panel.
-    Dragging any divider in any channel synchronizes the height across ALL channels!
+    Dragging in any channel updates the height across ALL channels simultaneously!
     """
     def __init__(self, parent, section_key: str, app_instance, height=6, **kwargs):
         super().__init__(parent, height=height, bg=THEME["divider_normal"],
@@ -457,11 +454,9 @@ class SynchronizedHorizontalDivider(tk.Canvas):
         
         is_edit = getattr(self.app, "edit_mode_active", False)
         grip_col = THEME["divider_grip_active"] if is_edit else THEME["divider_grip"]
-        
-        # Central grip handle dots (3 dots)
         mid_x = w // 2
         mid_y = h // 2
-        for offset in [-12, 0, 12]:
+        for offset in [-14, 0, 14]:
             self.create_oval(mid_x + offset - 1, mid_y - 1, mid_x + offset + 1, mid_y + 1, fill=grip_col, outline="")
 
     def on_press(self, event):
@@ -491,90 +486,28 @@ class SynchronizedHorizontalDivider(tk.Canvas):
             self.config(bg=THEME["divider_active"] if is_edit else THEME["divider_normal"])
 
 
-class SynchronizedVerticalDivider(tk.Canvas):
-    """
-    Vertical draggable divider between VU Meter and Right Telemetry Panel.
-    Dragging adjusts the panel split across ALL channels simultaneously!
-    """
-    def __init__(self, parent, app_instance, width=6, **kwargs):
-        super().__init__(parent, width=width, bg=THEME["divider_normal"],
-                         highlightthickness=0, cursor="sb_h_double_arrow", **kwargs)
-        self.app = app_instance
-        self.start_x = 0
-        self.is_dragging = False
-        
-        self.bind("<Button-1>", self.on_press)
-        self.bind("<B1-Motion>", self.on_motion)
-        self.bind("<ButtonRelease-1>", self.on_release)
-        self.bind("<Enter>", self.on_enter)
-        self.bind("<Leave>", self.on_leave)
-        self.bind("<Configure>", lambda e: self.draw_divider())
-        self.draw_divider()
-
-    def set_edit_mode(self, is_edit: bool):
-        bg = THEME["divider_active"] if is_edit else THEME["divider_normal"]
-        self.config(bg=bg)
-        self.draw_divider()
-
-    def draw_divider(self):
-        self.delete("all")
-        w = self.winfo_width()
-        h = self.winfo_height()
-        if h < 10:
-            return
-        is_edit = getattr(self.app, "edit_mode_active", False)
-        grip_col = THEME["divider_grip_active"] if is_edit else THEME["divider_grip"]
-        mid_x = w // 2
-        mid_y = h // 2
-        for offset in [-12, 0, 12]:
-            self.create_oval(mid_x - 1, mid_y + offset - 1, mid_x + 1, mid_y + offset + 1, fill=grip_col, outline="")
-
-    def on_press(self, event):
-        self.start_x = event.x_root
-        self.is_dragging = True
-        self.config(bg=THEME["divider_active"])
-
-    def on_motion(self, event):
-        if self.is_dragging:
-            delta = event.x_root - self.start_x
-            if abs(delta) >= 1:
-                self.start_x = event.x_root
-                self.app.adjust_shared_panel_width(delta)
-
-    def on_release(self, event):
-        self.is_dragging = False
-        is_edit = getattr(self.app, "edit_mode_active", False)
-        self.config(bg=THEME["divider_active"] if is_edit else THEME["divider_normal"])
-        self.draw_divider()
-
-    def on_enter(self, event):
-        self.config(bg=THEME["divider_active"])
-
-    def on_leave(self, event):
-        if not self.is_dragging:
-            is_edit = getattr(self.app, "edit_mode_active", False)
-            self.config(bg=THEME["divider_active"] if is_edit else THEME["divider_normal"])
-
-
 # ==============================================================================
 # CUSTOM TKINTER WIDGETS
 # ==============================================================================
 class FullHeightVUMeter(tk.Canvas):
-    def __init__(self, parent, width=32, **kwargs):
+    """
+    Fixed-Width Vertical VU Meter that stretches across the FULL HEIGHT
+    of the channel card dynamically.
+    """
+    def __init__(self, parent, width=36, **kwargs):
         super().__init__(parent, width=width, bg=THEME["meter_bg"],
                          highlightthickness=1, highlightbackground=THEME["bg_card_border"], **kwargs)
         self.meter_width = width
-        self.meter_height = 340
+        self.meter_height = 360
         self.current_val = 0.0
         self.peak_val = 0.0
         self.peak_hold_ticks = 0
-        self.num_segments = 38
+        self.num_segments = 40
         self.bind("<Configure>", self.on_resize)
 
     def on_resize(self, event):
         if event.height > 20:
             self.meter_height = event.height
-            self.meter_width = event.width
             self.draw_meter()
 
     def set_level(self, val_0_120: float):
@@ -609,9 +542,9 @@ class FullHeightVUMeter(tk.Canvas):
 
             if i >= self.num_segments - 3:
                 active_color = THEME["meter_red"]
-            elif i >= self.num_segments - 11:
+            elif i >= self.num_segments - 12:
                 active_color = THEME["meter_orange"]
-            elif i >= self.num_segments - 22:
+            elif i >= self.num_segments - 23:
                 active_color = THEME["meter_yellow"]
             else:
                 active_color = THEME["meter_green"]
@@ -640,35 +573,35 @@ class DualRFMeter(tk.Frame):
         top_row = tk.Frame(self, bg=THEME["bg_card_inner"])
         top_row.pack(fill="x", pady=(0, 4))
         
-        tk.Label(top_row, text="RF LINK", font=("Segoe UI", 9, "bold"),
+        tk.Label(top_row, text="RF LINK", font=("Segoe UI", 13, "bold"),
                  fg=THEME["text_muted"], bg=THEME["bg_card_inner"]).pack(side="left")
         
         qual_box = tk.Frame(top_row, bg=THEME["bg_card_inner"])
         qual_box.pack(side="right")
         
-        self.lbl_qual_txt = tk.Label(qual_box, text="QUAL", font=("Segoe UI", 8, "bold"),
+        self.lbl_qual_txt = tk.Label(qual_box, text="QUAL", font=("Segoe UI", 12, "bold"),
                                      fg=THEME["rf_qual_purple_bright"], bg=THEME["bg_card_inner"])
         self.lbl_qual_txt.pack(side="left", padx=(0, 6))
         
-        self.qual_canvas = tk.Canvas(qual_box, width=75, height=14, bg=THEME["bg_card_inner"], highlightthickness=0)
+        self.qual_canvas = tk.Canvas(qual_box, width=90, height=18, bg=THEME["bg_card_inner"], highlightthickness=0)
         self.qual_canvas.pack(side="left")
 
         # Antenna A
         row_a = tk.Frame(self, bg=THEME["bg_card_inner"])
-        row_a.pack(fill="x", pady=1)
-        self.lbl_ant_a = tk.Label(row_a, text="A", font=("Consolas", 9, "bold"),
+        row_a.pack(fill="x", pady=2)
+        self.lbl_ant_a = tk.Label(row_a, text="A", font=("Consolas", 13, "bold"),
                                   fg=THEME["rf_bar_active"], bg=THEME["bg_card_inner"], width=2)
         self.lbl_ant_a.pack(side="left", padx=(0, 4))
-        self.bar_a = tk.Canvas(row_a, height=10, bg=THEME["rf_bar_bg"], highlightthickness=1, highlightbackground=THEME["bg_card_border"])
+        self.bar_a = tk.Canvas(row_a, height=14, bg=THEME["rf_bar_bg"], highlightthickness=1, highlightbackground=THEME["bg_card_border"])
         self.bar_a.pack(side="left", fill="x", expand=True)
 
         # Antenna B
         row_b = tk.Frame(self, bg=THEME["bg_card_inner"])
-        row_b.pack(fill="x", pady=1)
-        self.lbl_ant_b = tk.Label(row_b, text="B", font=("Consolas", 9, "bold"),
+        row_b.pack(fill="x", pady=2)
+        self.lbl_ant_b = tk.Label(row_b, text="B", font=("Consolas", 13, "bold"),
                                   fg=THEME["text_muted"], bg=THEME["bg_card_inner"], width=2)
         self.lbl_ant_b.pack(side="left", padx=(0, 4))
-        self.bar_b = tk.Canvas(row_b, height=10, bg=THEME["rf_bar_bg"], highlightthickness=1, highlightbackground=THEME["bg_card_border"])
+        self.bar_b = tk.Canvas(row_b, height=14, bg=THEME["rf_bar_bg"], highlightthickness=1, highlightbackground=THEME["bg_card_border"])
         self.bar_b.pack(side="left", fill="x", expand=True)
 
         self.bar_a.bind("<Configure>", lambda e: self.draw_bars())
@@ -708,10 +641,10 @@ class DualRFMeter(tk.Frame):
 
     def draw_purple_dots(self, active_count: int):
         self.qual_canvas.delete("all")
-        dot_r = 5
-        gap = 14
-        start_x = 7
-        y = 7
+        dot_r = 6
+        gap = 17
+        start_x = 9
+        y = 9
         for i in range(5):
             x = start_x + (i * gap)
             is_lit = (i < active_count)
@@ -740,7 +673,7 @@ class DualRFMeter(tk.Frame):
 
 
 class BatteryGauge(tk.Canvas):
-    def __init__(self, parent, width=46, height=20, **kwargs):
+    def __init__(self, parent, width=58, height=24, **kwargs):
         super().__init__(parent, width=width, height=height, bg=THEME["bg_card_inner"],
                          highlightthickness=0, **kwargs)
         self.w = width
@@ -759,9 +692,9 @@ class BatteryGauge(tk.Canvas):
 
     def draw_battery(self):
         self.delete("all")
-        bx1, by1, bx2, by2 = 2, 3, self.w - 8, self.h - 3
+        bx1, by1, bx2, by2 = 2, 3, self.w - 9, self.h - 3
         self.create_rectangle(bx1, by1, bx2, by2, outline=THEME["text_muted"], width=1)
-        self.create_rectangle(bx2, by1 + 4, self.w - 4, by2 - 4, fill=THEME["text_muted"], outline="")
+        self.create_rectangle(bx2, by1 + 5, self.w - 4, by2 - 5, fill=THEME["text_muted"], outline="")
 
         if self.mins < 60 or self.bars <= 1:
             col = THEME["batt_low"]
@@ -777,7 +710,7 @@ class BatteryGauge(tk.Canvas):
 
 
 class StatusLED(tk.Canvas):
-    def __init__(self, parent, label: str, active_color: str, size=14, **kwargs):
+    def __init__(self, parent, label: str, active_color: str, size=16, **kwargs):
         super().__init__(parent, width=size, height=size, bg=THEME["bg_card_inner"],
                          highlightthickness=0, **kwargs)
         self.size = size
@@ -798,11 +731,11 @@ class StatusLED(tk.Canvas):
         pad = 2
         self.create_oval(pad, pad, self.size - pad, self.size - pad, fill=fill_col, outline=outline_col, width=1)
         if self.is_active:
-            self.create_oval(pad + 2, pad + 2, pad + 5, pad + 5, fill="#FFFFFF", outline="")
+            self.create_oval(pad + 2, pad + 2, pad + 6, pad + 6, fill="#FFFFFF", outline="")
 
 
 # ==============================================================================
-# CHANNEL MONITOR CARD (With Interactive Section Resizers)
+# CHANNEL MONITOR CARD (With Fixed-Width VU & 150% Scaled Typography)
 # ==============================================================================
 class ChannelCard(tk.Frame):
     def __init__(self, parent, channel_num: int, app_instance):
@@ -822,56 +755,50 @@ class ChannelCard(tk.Frame):
         self.drop_event_count = 0
         
         self.dividers: List[SynchronizedHorizontalDivider] = []
-        self.vert_divider: Optional[SynchronizedVerticalDivider] = None
-        
         self.setup_ui()
 
     def setup_ui(self):
         # 1. Top Channel Header
-        header_frame = tk.Frame(self, bg=THEME["bg_card_inner"], padx=10, pady=6)
+        header_frame = tk.Frame(self, bg=THEME["bg_card_inner"], padx=12, pady=6)
         header_frame.pack(fill="x", side="top")
         
-        ch_badge = tk.Label(header_frame, text=f"CH {self.channel_num}", font=("Segoe UI", 11, "bold"),
-                            fg=THEME["bg_root"], bg=THEME["text_accent"], padx=8, pady=1)
+        ch_badge = tk.Label(header_frame, text=f"CH {self.channel_num}", font=("Segoe UI", 15, "bold"),
+                            fg=THEME["bg_root"], bg=THEME["text_accent"], padx=10, pady=2)
         ch_badge.pack(side="left")
         
-        self.freq_label = tk.Label(header_frame, text="---.--- MHz", font=("Consolas", 11, "bold"),
+        self.freq_label = tk.Label(header_frame, text="---.--- MHz", font=("Consolas", 15, "bold"),
                                    fg=THEME["text_accent"], bg=THEME["bg_card_inner"])
         self.freq_label.pack(side="right")
 
         # 2. Channel Name Banner
-        name_frame = tk.Frame(self, bg=THEME["bg_card"], padx=10, pady=4)
+        name_frame = tk.Frame(self, bg=THEME["bg_card"], padx=12, pady=4)
         name_frame.pack(fill="x")
         
-        self.name_label = tk.Label(name_frame, text=f"CHANNEL {self.channel_num}", font=("Segoe UI", 13, "bold"),
+        self.name_label = tk.Label(name_frame, text=f"CHANNEL {self.channel_num}", font=("Segoe UI", 18, "bold"),
                                    fg=THEME["text_main"], bg=THEME["bg_card"], anchor="w")
         self.name_label.pack(fill="x")
 
         # 3. Main Body Frame
-        body_frame = tk.Frame(self, bg=THEME["bg_card"], padx=6, pady=4)
+        body_frame = tk.Frame(self, bg=THEME["bg_card"], padx=8, pady=4)
         body_frame.pack(fill="both", expand=True)
 
-        # Left: Full-Height Dynamic VU Meter + Scale
-        self.meter_container = tk.Frame(body_frame, bg=THEME["bg_card"])
-        self.meter_container.pack(side="left", fill="both", expand=True, padx=(0, 2))
+        # Left: Fixed-Width Broadcast VU Meter + Scale
+        self.meter_container = tk.Frame(body_frame, bg=THEME["bg_card"], width=68)
+        self.meter_container.pack(side="left", fill="y", padx=(0, 6))
+        self.meter_container.pack_propagate(False)
 
         scale_frame = tk.Frame(self.meter_container, bg=THEME["bg_card"])
         scale_frame.pack(side="left", fill="y", padx=(0, 2))
         for db in ["0", "-6", "-12", "-18", "-24", "-36", "-60"]:
-            lbl = tk.Label(scale_frame, text=db, font=("Consolas", 8, "bold"), fg=THEME["text_muted"], bg=THEME["bg_card"])
+            lbl = tk.Label(scale_frame, text=db, font=("Consolas", 11, "bold"), fg=THEME["text_muted"], bg=THEME["bg_card"])
             lbl.pack(side="top", expand=True)
 
-        self.vu_meter = FullHeightVUMeter(self.meter_container, width=28)
-        self.vu_meter.pack(side="left", fill="both", expand=True)
-
-        # Vertical Divider (Between VU Meter and Right Panel)
-        self.vert_divider = SynchronizedVerticalDivider(body_frame, self.app, width=5)
-        self.vert_divider.pack(side="left", fill="y", padx=2)
+        self.vu_meter = FullHeightVUMeter(self.meter_container, width=36)
+        self.vu_meter.pack(side="left", fill="y")
 
         # Right: Telemetry Column with 4 Resizable Sections & 3 Horizontal Dividers
-        self.right_panel = tk.Frame(body_frame, bg=THEME["bg_card"], width=self.app.shared_right_panel_width)
-        self.right_panel.pack(side="right", fill="both", expand=False)
-        self.right_panel.pack_propagate(False)
+        self.right_panel = tk.Frame(body_frame, bg=THEME["bg_card"])
+        self.right_panel.pack(side="left", fill="both", expand=True)
 
         # SECTION 1: DUAL RF LINK
         self.frame_rf = tk.Frame(self.right_panel, bg=THEME["bg_card_inner"],
@@ -880,7 +807,7 @@ class ChannelCard(tk.Frame):
         self.frame_rf.pack(fill="x", side="top")
         self.frame_rf.pack_propagate(False)
 
-        self.rf_meter = DualRFMeter(self.frame_rf, padx=6, pady=4)
+        self.rf_meter = DualRFMeter(self.frame_rf, padx=8, pady=6)
         self.rf_meter.pack(fill="both", expand=True)
 
         # DIVIDER 1: RF -> TX
@@ -896,35 +823,35 @@ class ChannelCard(tk.Frame):
         self.frame_tx.pack_propagate(False)
         self.frame_tx.bind("<Button-1>", self.on_tx_box_click)
 
-        tx_title_frame = tk.Frame(self.frame_tx, bg=THEME["bg_card_inner"], padx=6, pady=2)
+        tx_title_frame = tk.Frame(self.frame_tx, bg=THEME["bg_card_inner"], padx=8, pady=2)
         tx_title_frame.pack(fill="x")
         tx_title_frame.bind("<Button-1>", self.on_tx_box_click)
         
-        lbl_tx = tk.Label(tx_title_frame, text="TRANSMITTER (TX)", font=("Segoe UI", 8, "bold"),
+        lbl_tx = tk.Label(tx_title_frame, text="TRANSMITTER (TX)", font=("Segoe UI", 13, "bold"),
                           fg=THEME["text_muted"], bg=THEME["bg_card_inner"])
         lbl_tx.pack(side="left")
         lbl_tx.bind("<Button-1>", self.on_tx_box_click)
 
-        batt_row = tk.Frame(self.frame_tx, bg=THEME["bg_card_inner"], padx=6)
+        batt_row = tk.Frame(self.frame_tx, bg=THEME["bg_card_inner"], padx=8)
         batt_row.pack(fill="x", pady=(0, 2))
         batt_row.bind("<Button-1>", self.on_tx_box_click)
         
-        self.batt_gauge = BatteryGauge(batt_row, width=42, height=18)
-        self.batt_gauge.pack(side="left", padx=(0, 4))
+        self.batt_gauge = BatteryGauge(batt_row, width=58, height=24)
+        self.batt_gauge.pack(side="left", padx=(0, 6))
         self.batt_gauge.bind("<Button-1>", self.on_tx_box_click)
 
-        self.batt_time_label = tk.Label(batt_row, text="--h --m", font=("Consolas", 9, "bold"),
+        self.batt_time_label = tk.Label(batt_row, text="--h --m", font=("Consolas", 14, "bold"),
                                         fg=THEME["text_main"], bg=THEME["bg_card_inner"])
         self.batt_time_label.pack(side="left")
         self.batt_time_label.bind("<Button-1>", self.on_tx_box_click)
 
-        self.batt_alert_label = tk.Label(self.frame_tx, text="BATTERY OK", font=("Segoe UI", 7, "bold"),
-                                         fg=THEME["status_connected"], bg=THEME["bg_card_inner"], padx=6)
+        self.batt_alert_label = tk.Label(self.frame_tx, text="BATTERY OK", font=("Segoe UI", 12, "bold"),
+                                         fg=THEME["status_connected"], bg=THEME["bg_card_inner"], padx=8)
         self.batt_alert_label.pack(anchor="w")
         self.batt_alert_label.bind("<Button-1>", self.on_tx_box_click)
 
-        self.ack_hint_label = tk.Label(self.frame_tx, text="", font=("Segoe UI", 7, "italic"),
-                                       fg=THEME["text_muted"], bg=THEME["bg_card_inner"], padx=6)
+        self.ack_hint_label = tk.Label(self.frame_tx, text="", font=("Segoe UI", 10, "italic"),
+                                       fg=THEME["text_muted"], bg=THEME["bg_card_inner"], padx=8)
         self.ack_hint_label.pack(anchor="w")
         self.ack_hint_label.bind("<Button-1>", self.on_tx_box_click)
 
@@ -940,33 +867,33 @@ class ChannelCard(tk.Frame):
         self.frame_flags.pack(fill="x", side="top")
         self.frame_flags.pack_propagate(False)
 
-        tk.Label(self.frame_flags, text="STATUS FLAGS", font=("Segoe UI", 8, "bold"),
-                 fg=THEME["text_muted"], bg=THEME["bg_card_inner"], padx=6, pady=2).pack(anchor="w")
+        tk.Label(self.frame_flags, text="STATUS FLAGS", font=("Segoe UI", 13, "bold"),
+                 fg=THEME["text_muted"], bg=THEME["bg_card_inner"], padx=8, pady=2).pack(anchor="w")
 
-        led_grid = tk.Frame(self.frame_flags, bg=THEME["bg_card_inner"], padx=6)
+        led_grid = tk.Frame(self.frame_flags, bg=THEME["bg_card_inner"], padx=8)
         led_grid.pack(fill="x")
 
         # Row 1: Mute & Peak
         r1 = tk.Frame(led_grid, bg=THEME["bg_card_inner"])
-        r1.pack(fill="x", pady=1)
-        self.led_mute = StatusLED(r1, "MUTE", THEME["led_mute"], size=12)
-        self.led_mute.pack(side="left", padx=(0, 3))
-        tk.Label(r1, text="MUTE", font=("Segoe UI", 7, "bold"), fg=THEME["text_main"], bg=THEME["bg_card_inner"]).pack(side="left", padx=(0, 8))
+        r1.pack(fill="x", pady=2)
+        self.led_mute = StatusLED(r1, "MUTE", THEME["led_mute"], size=16)
+        self.led_mute.pack(side="left", padx=(0, 4))
+        tk.Label(r1, text="MUTE", font=("Segoe UI", 12, "bold"), fg=THEME["text_main"], bg=THEME["bg_card_inner"]).pack(side="left", padx=(0, 10))
 
-        self.led_peak = StatusLED(r1, "CLIP", THEME["led_peak"], size=12)
-        self.led_peak.pack(side="left", padx=(0, 3))
-        tk.Label(r1, text="PEAK", font=("Segoe UI", 7, "bold"), fg=THEME["text_main"], bg=THEME["bg_card_inner"]).pack(side="left")
+        self.led_peak = StatusLED(r1, "CLIP", THEME["led_peak"], size=16)
+        self.led_peak.pack(side="left", padx=(0, 4))
+        tk.Label(r1, text="PEAK", font=("Segoe UI", 12, "bold"), fg=THEME["text_main"], bg=THEME["bg_card_inner"]).pack(side="left")
 
         # Row 2: Interference & Encryption
         r2 = tk.Frame(led_grid, bg=THEME["bg_card_inner"])
-        r2.pack(fill="x", pady=1)
-        self.led_interf = StatusLED(r2, "INTERF", THEME["led_interf"], size=12)
-        self.led_interf.pack(side="left", padx=(0, 3))
-        tk.Label(r2, text="INTERF", font=("Segoe UI", 7, "bold"), fg=THEME["text_main"], bg=THEME["bg_card_inner"]).pack(side="left", padx=(0, 6))
+        r2.pack(fill="x", pady=2)
+        self.led_interf = StatusLED(r2, "INTERF", THEME["led_interf"], size=16)
+        self.led_interf.pack(side="left", padx=(0, 4))
+        tk.Label(r2, text="INTERF", font=("Segoe UI", 12, "bold"), fg=THEME["text_main"], bg=THEME["bg_card_inner"]).pack(side="left", padx=(0, 8))
 
-        self.led_enc = StatusLED(r2, "ENC", THEME["led_enc"], size=12)
-        self.led_enc.pack(side="left", padx=(0, 3))
-        tk.Label(r2, text="ENCR", font=("Segoe UI", 7, "bold"), fg=THEME["text_main"], bg=THEME["bg_card_inner"]).pack(side="left")
+        self.led_enc = StatusLED(r2, "ENC", THEME["led_enc"], size=16)
+        self.led_enc.pack(side="left", padx=(0, 4))
+        tk.Label(r2, text="ENCR", font=("Segoe UI", 12, "bold"), fg=THEME["text_main"], bg=THEME["bg_card_inner"]).pack(side="left")
 
         # DIVIDER 3: FLAGS -> LOG
         div3 = SynchronizedHorizontalDivider(self.right_panel, "flags", self.app)
@@ -979,38 +906,32 @@ class ChannelCard(tk.Frame):
                                   highlightthickness=1, highlightbackground=THEME["bg_card_border"])
         self.frame_log.pack(fill="both", expand=True, side="top")
 
-        log_header = tk.Frame(self.frame_log, bg=THEME["bg_log"], padx=4, pady=2)
+        log_header = tk.Frame(self.frame_log, bg=THEME["bg_log"], padx=6, pady=2)
         log_header.pack(fill="x")
         
-        self.lbl_log_title = tk.Label(log_header, text="📉 RF DROPS: 0", font=("Segoe UI", 8, "bold"),
+        self.lbl_log_title = tk.Label(log_header, text="📉 RF DROPS: 0", font=("Segoe UI", 12, "bold"),
                                       fg=THEME["rf_qual_purple_bright"], bg=THEME["bg_log"])
         self.lbl_log_title.pack(side="left")
         
-        btn_clear = tk.Button(log_header, text="CLR", font=("Segoe UI", 7, "bold"),
-                              fg=THEME["text_muted"], bg=THEME["bg_card"], bd=0, padx=3, cursor="hand2",
+        btn_clear = tk.Button(log_header, text="CLR", font=("Segoe UI", 11, "bold"),
+                              fg=THEME["text_muted"], bg=THEME["bg_card"], bd=0, padx=6, cursor="hand2",
                               command=self.clear_drop_log)
         btn_clear.pack(side="right")
 
-        self.log_list = tk.Listbox(self.frame_log, font=("Consolas", 8), bg=THEME["bg_log"], fg=THEME["text_muted"],
+        self.log_list = tk.Listbox(self.frame_log, font=("Consolas", 11), bg=THEME["bg_log"], fg=THEME["text_muted"],
                                    selectbackground=THEME["bg_card_border"], selectforeground="#FFF",
                                    bd=0, highlightthickness=0)
-        self.log_list.pack(fill="both", expand=True, padx=2, pady=(0, 2))
+        self.log_list.pack(fill="both", expand=True, padx=4, pady=(0, 2))
 
     def update_section_heights(self, heights: Dict[str, int]):
-        """Synchronously updates the section heights on this channel."""
         self.frame_rf.config(height=heights["rf"])
         self.frame_tx.config(height=heights["tx"])
         self.frame_flags.config(height=heights["flags"])
         self.frame_log.config(height=heights["log"])
 
-    def update_panel_width(self, width: int):
-        self.right_panel.config(width=width)
-
     def set_edit_mode(self, is_edit: bool):
         for div in self.dividers:
             div.set_edit_mode(is_edit)
-        if self.vert_divider:
-            self.vert_divider.set_edit_mode(is_edit)
 
     def log_rf_drop(self, dots: int, details: str = ""):
         now_str = datetime.datetime.now().strftime("%H:%M:%S")
@@ -1151,14 +1072,14 @@ class ChannelCard(tk.Frame):
 
 
 # ==============================================================================
-# MAIN APPLICATION WINDOW (With Synchronized Section Resizing)
+# MAIN APPLICATION WINDOW
 # ==============================================================================
 class AxientMonitorApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("RCShure - Shure Axient Digital Real-Time Monitor")
-        self.root.geometry("1280x720")
-        self.root.minsize(960, 580)
+        self.root.geometry("1360x760")
+        self.root.minsize(1020, 620)
         self.root.configure(bg=THEME["bg_root"])
         
         self.queue: queue.Queue = queue.Queue()
@@ -1168,14 +1089,13 @@ class AxientMonitorApp:
         self.channel_count = 4
         self.channels: Dict[int, ChannelCard] = {}
         
-        # Shared Synchronized Layout Heights & Width
+        # Shared Synchronized Layout Heights
         self.shared_section_heights = {
-            "rf": 74,
-            "tx": 78,
-            "flags": 74,
-            "log": 160,
+            "rf": 88,
+            "tx": 96,
+            "flags": 90,
+            "log": 180,
         }
-        self.shared_right_panel_width = 190
         self.edit_mode_active = False
 
         self.setup_ui()
@@ -1184,61 +1104,61 @@ class AxientMonitorApp:
 
     def setup_ui(self):
         # 1. Top Header Control Bar
-        header = tk.Frame(self.root, bg=THEME["bg_header"], padx=18, pady=10,
+        header = tk.Frame(self.root, bg=THEME["bg_header"], padx=20, pady=12,
                           highlightthickness=1, highlightbackground=THEME["bg_card_border"])
         header.pack(fill="x", side="top")
 
         brand_frame = tk.Frame(header, bg=THEME["bg_header"])
-        brand_frame.pack(side="left", padx=(0, 18))
+        brand_frame.pack(side="left", padx=(0, 22))
         
-        title_lbl = tk.Label(brand_frame, text="RCShure", font=("Segoe UI", 18, "bold"),
+        title_lbl = tk.Label(brand_frame, text="RCShure", font=("Segoe UI", 26, "bold"),
                              fg=THEME["text_accent"], bg=THEME["bg_header"])
         title_lbl.pack(side="left")
         
-        sub_lbl = tk.Label(brand_frame, text="Axient Digital Monitor", font=("Segoe UI", 10),
+        sub_lbl = tk.Label(brand_frame, text="Axient Digital Monitor", font=("Segoe UI", 14),
                            fg=THEME["text_muted"], bg=THEME["bg_header"])
-        sub_lbl.pack(side="left", padx=(8, 0), pady=(4, 0))
+        sub_lbl.pack(side="left", padx=(10, 0), pady=(6, 0))
 
         ctrl_frame = tk.Frame(header, bg=THEME["bg_header"])
         ctrl_frame.pack(side="left")
 
-        tk.Label(ctrl_frame, text="IP:", font=("Segoe UI", 10, "bold"),
+        tk.Label(ctrl_frame, text="IP:", font=("Segoe UI", 14, "bold"),
                  fg=THEME["text_main"], bg=THEME["bg_header"]).pack(side="left", padx=(0, 6))
         
         self.ip_var = tk.StringVar(value="192.168.1.50")
-        self.ip_entry = tk.Entry(ctrl_frame, textvariable=self.ip_var, font=("Consolas", 11),
+        self.ip_entry = tk.Entry(ctrl_frame, textvariable=self.ip_var, font=("Consolas", 15, "bold"),
                                  bg=THEME["bg_card_inner"], fg=THEME["text_main"],
-                                 insertbackground=THEME["text_accent"], width=14, bd=1, relief="solid")
+                                 insertbackground=THEME["text_accent"], width=13, bd=1, relief="solid")
         self.ip_entry.pack(side="left", padx=(0, 10))
 
-        tk.Label(ctrl_frame, text="Port:", font=("Segoe UI", 10),
+        tk.Label(ctrl_frame, text="Port:", font=("Segoe UI", 14),
                  fg=THEME["text_muted"], bg=THEME["bg_header"]).pack(side="left", padx=(0, 4))
         self.port_var = tk.StringVar(value=str(DEFAULT_SHURE_PORT))
-        self.port_entry = tk.Entry(ctrl_frame, textvariable=self.port_var, font=("Consolas", 11),
+        self.port_entry = tk.Entry(ctrl_frame, textvariable=self.port_var, font=("Consolas", 15, "bold"),
                                    bg=THEME["bg_card_inner"], fg=THEME["text_main"],
-                                   insertbackground=THEME["text_accent"], width=6, bd=1, relief="solid")
+                                   insertbackground=THEME["text_accent"], width=5, bd=1, relief="solid")
         self.port_entry.pack(side="left", padx=(0, 14))
 
         self.sim_mode_var = tk.BooleanVar(value=True)
         self.sim_check = tk.Checkbutton(ctrl_frame, text="Simulazione Offline",
-                                        variable=self.sim_mode_var, font=("Segoe UI", 10),
+                                        variable=self.sim_mode_var, font=("Segoe UI", 14),
                                         fg=THEME["text_accent"], bg=THEME["bg_header"],
                                         selectcolor=THEME["bg_card_inner"],
                                         activebackground=THEME["bg_header"],
                                         activeforeground=THEME["text_accent"])
-        self.sim_check.pack(side="left", padx=(0, 14))
+        self.sim_check.pack(side="left", padx=(0, 16))
 
-        self.btn_connect = tk.Button(ctrl_frame, text="CONNETTI", font=("Segoe UI", 11, "bold"),
+        self.btn_connect = tk.Button(ctrl_frame, text="CONNETTI", font=("Segoe UI", 15, "bold"),
                                      bg=THEME["accent_primary"], fg="#FFFFFF", activebackground=THEME["accent_hover"],
-                                     activeforeground="#FFFFFF", bd=0, padx=16, pady=4, cursor="hand2",
+                                     activeforeground="#FFFFFF", bd=0, padx=18, pady=4, cursor="hand2",
                                      command=self.toggle_connection)
         self.btn_connect.pack(side="left", padx=(0, 16))
 
         # EDIT LAYOUT BUTTON
-        self.btn_edit_layout = tk.Button(ctrl_frame, text="📐 EDIT LAYOUT", font=("Segoe UI", 10, "bold"),
+        self.btn_edit_layout = tk.Button(ctrl_frame, text="📐 EDIT LAYOUT", font=("Segoe UI", 14, "bold"),
                                          bg=THEME["bg_card_inner"], fg=THEME["text_main"],
                                          activebackground=THEME["bg_card_border"], activeforeground=THEME["text_accent"],
-                                         bd=1, relief="solid", padx=12, pady=4, cursor="hand2",
+                                         bd=1, relief="solid", padx=14, pady=4, cursor="hand2",
                                          command=self.toggle_edit_layout)
         self.btn_edit_layout.pack(side="left", padx=(0, 14))
 
@@ -1246,15 +1166,15 @@ class AxientMonitorApp:
         status_frame = tk.Frame(header, bg=THEME["bg_header"])
         status_frame.pack(side="right")
 
-        self.model_badge = tk.Label(status_frame, text="MODEL: AD4Q", font=("Consolas", 10, "bold"),
-                                    fg=THEME["text_muted"], bg=THEME["bg_card_inner"], padx=8, pady=3)
+        self.model_badge = tk.Label(status_frame, text="MODEL: AD4Q", font=("Consolas", 14, "bold"),
+                                    fg=THEME["text_muted"], bg=THEME["bg_card_inner"], padx=10, pady=4)
         self.model_badge.pack(side="right", padx=(10, 0))
 
-        self.status_dot = tk.Canvas(status_frame, width=14, height=14, bg=THEME["bg_header"], highlightthickness=0)
-        self.status_dot.pack(side="left", padx=(0, 6))
-        self.status_dot_id = self.status_dot.create_oval(1, 1, 13, 13, fill=THEME["status_disconnected"], outline="")
+        self.status_dot = tk.Canvas(status_frame, width=16, height=16, bg=THEME["bg_header"], highlightthickness=0)
+        self.status_dot.pack(side="left", padx=(0, 8))
+        self.status_dot_id = self.status_dot.create_oval(1, 1, 15, 15, fill=THEME["status_disconnected"], outline="")
 
-        self.status_text = tk.Label(status_frame, text="DISCONNESSO", font=("Segoe UI", 10, "bold"),
+        self.status_text = tk.Label(status_frame, text="DISCONNESSO", font=("Segoe UI", 14, "bold"),
                                     fg=THEME["status_disconnected"], bg=THEME["bg_header"])
         self.status_text.pack(side="left")
 
@@ -1266,16 +1186,16 @@ class AxientMonitorApp:
         self.build_channel_grid(4)
 
         # 3. Footer Bar
-        self.footer = tk.Frame(self.root, bg=THEME["bg_header"], padx=16, pady=6,
+        self.footer = tk.Frame(self.root, bg=THEME["bg_header"], padx=18, pady=8,
                                highlightthickness=1, highlightbackground=THEME["bg_card_border"])
         self.footer.pack(fill="x", side="bottom")
 
-        self.footer_log = tk.Label(self.footer, text="Pronto. In modalità EDIT puoi trascinare qualsiasi divisore per ridimensionare tutte le colonne sincronizzate.",
-                                   font=("Segoe UI", 10), fg=THEME["text_muted"], bg=THEME["bg_header"], anchor="w")
+        self.footer_log = tk.Label(self.footer, text="Pronto. In modalità EDIT puoi trascinare qualsiasi divisore orizzontale per ridimensionare tutte le colonne sincronizzate.",
+                                   font=("Segoe UI", 14), fg=THEME["text_muted"], bg=THEME["bg_header"], anchor="w")
         self.footer_log.pack(side="left", fill="x", expand=True)
 
-        self.footer_info = tk.Label(self.footer, text="Synchronized Multi-Zone Heights | Dual RF | 5-Dot Qual",
-                                    font=("Consolas", 9), fg=THEME["text_muted"], bg=THEME["bg_header"])
+        self.footer_info = tk.Label(self.footer, text="Fixed-Width VU | 150% Scaled Typography | Synchronized Heights",
+                                    font=("Consolas", 12), fg=THEME["text_muted"], bg=THEME["bg_header"])
         self.footer_info.pack(side="right")
 
     def toggle_edit_layout(self):
@@ -1284,7 +1204,7 @@ class AxientMonitorApp:
         if self.edit_mode_active:
             self.btn_edit_layout.config(text="🔒 BLOCCA LAYOUT", bg=THEME["edit_mode_active"], fg="#000000")
             self.paned_container.config(sashwidth=8, sashrelief="raised", bg=THEME["divider_active"])
-            self.footer_log.config(text="Modalità EDIT attiva: trascina un qualsiasi divisore orizzontale o verticale. Le altezze si aggiornano su TUTTI i canali contemporaneamente!")
+            self.footer_log.config(text="Modalità EDIT attiva: trascina un divisore orizzontale per variare l'altezza su TUTTI i canali contemporaneamente.")
         else:
             self.btn_edit_layout.config(text="📐 EDIT LAYOUT", bg=THEME["bg_card_inner"], fg=THEME["text_main"])
             self.paned_container.config(sashwidth=4, sashrelief="flat", bg=THEME["bg_root"])
@@ -1294,25 +1214,12 @@ class AxientMonitorApp:
             card.set_edit_mode(self.edit_mode_active)
 
     def adjust_shared_section_height(self, section_key: str, delta_y: int):
-        """
-        Adjusts the height of a section across ALL channels synchronously!
-        """
-        current_h = self.shared_section_heights.get(section_key, 70)
-        new_h = max(36, min(240, current_h + delta_y))
+        current_h = self.shared_section_heights.get(section_key, 80)
+        new_h = max(45, min(280, current_h + delta_y))
         self.shared_section_heights[section_key] = new_h
         
-        # Apply updated heights to ALL channels simultaneously
         for card in self.channels.values():
             card.update_section_heights(self.shared_section_heights)
-
-    def adjust_shared_panel_width(self, delta_x: int):
-        """
-        Adjusts the width of the right telemetry panel across ALL channels synchronously!
-        """
-        new_w = max(130, min(320, self.shared_right_panel_width + delta_x))
-        self.shared_right_panel_width = new_w
-        for card in self.channels.values():
-            card.update_panel_width(self.shared_right_panel_width)
 
     def build_channel_grid(self, count: int):
         for pane in self.paned_container.panes():
@@ -1322,7 +1229,7 @@ class AxientMonitorApp:
 
         for ch in range(1, count + 1):
             card = ChannelCard(self.paned_container, ch, self)
-            self.paned_container.add(card, minsize=220, stretch="always")
+            self.paned_container.add(card, minsize=240, stretch="always")
             self.channels[ch] = card
 
     def blink_loop(self):
