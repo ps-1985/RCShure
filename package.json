@@ -1,0 +1,21 @@
+{
+  "name": "rcshure",
+  "version": "1.0.0",
+  "description": "Standalone real-time monitor & offline simulator for Shure Axient Digital wireless receivers (AD4D/AD4Q)",
+  "main": "axient_monitor.py",
+  "scripts": {
+    "pub": "node scripts/publish.js",
+    "start": "python axient_monitor.py",
+    "build": "build.bat"
+  },
+  "keywords": [
+    "shure",
+    "axient-digital",
+    "audio-monitor",
+    "rf-monitor",
+    "ad4q",
+    "ad4d"
+  ],
+  "author": "ps-1985",
+  "license": "MIT"
+}
