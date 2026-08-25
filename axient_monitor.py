@@ -5,9 +5,10 @@ RCShure - Shure Axient Digital (AD4D / AD4Q) Real-Time Monitor & Simulator
 Standalone Windows Application (Zero external dependencies, Python Standard Library only)
 
 Features:
-- Fixed-Width Broadcast VU Meter (Non-resizable width, Full-Height Responsive Canvas)
+- Persistent Layout & State: Automatically remembers section heights, window size, IP, and settings across sessions
+- Fixed-Width Broadcast VU Meter (Full-Height Dynamic Canvas)
 - 150% Scaled Large Typography & High-Visibility UI Elements
-- EDIT LAYOUT Mode: Synchronized horizontal draggable dividers across all channels (1 to 4)
+- Always-Active Synchronized Horizontal Draggable Dividers across all channels (1 to 4)
 - Dual RF Antenna (A & B) Meters + 5 Purple Quality Dots (Axient Digital Standard)
 - RF Drop Event Logger in each channel (timestamps events when RF Quality <= 1/5)
 - Interactive Low-Battery Blinking Alert with Click-to-Acknowledge
@@ -23,10 +24,56 @@ import datetime
 import math
 import random
 import re
+import json
 from typing import Dict, Any, Optional, List
 
 import tkinter as tk
 from tkinter import ttk, messagebox
+
+# ==============================================================================
+# CONFIG PERSISTENCE HELPER
+# ==============================================================================
+def get_config_path() -> str:
+    """Returns path to local config file next to script or .exe."""
+    if getattr(sys, "frozen", False):
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_dir, "rcshure_config.json")
+
+
+def load_config() -> Dict[str, Any]:
+    default_cfg = {
+        "section_heights": {
+            "rf": 88,
+            "tx": 96,
+            "flags": 90,
+            "log": 180,
+        },
+        "ip": "192.168.1.50",
+        "port": "2202",
+        "sim_mode": True,
+        "geometry": "1360x760",
+    }
+    try:
+        cfg_path = get_config_path()
+        if os.path.exists(cfg_path):
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                default_cfg.update(data)
+    except Exception:
+        pass
+    return default_cfg
+
+
+def save_config(cfg: Dict[str, Any]):
+    try:
+        cfg_path = get_config_path()
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+    except Exception:
+        pass
+
 
 # ==============================================================================
 # COLOR PALETTE - Broadcast Dark Control Room Theme
@@ -80,8 +127,7 @@ THEME = {
     "led_enc": "#00E5FF",
     "led_peak": "#FF1744",
     
-    # Edit Mode & Divider Colors
-    "edit_mode_active": "#FFB300",
+    # Divider Colors
     "divider_normal": "#242E40",
     "divider_active": "#00E5FF",
     "divider_grip": "#7E8B9F",
@@ -416,19 +462,18 @@ class ShureClient(threading.Thread):
 
 
 # ==============================================================================
-# INTERACTIVE SYNCHRONIZED DRAGGABLE DIVIDERS
+# ALWAYS-ACTIVE SYNCHRONIZED DRAGGABLE DIVIDERS
 # ==============================================================================
 class SynchronizedHorizontalDivider(tk.Canvas):
     """
-    Horizontal draggable divider between sections in the right panel.
-    Dragging in any channel updates the height across ALL channels simultaneously!
+    Horizontal draggable divider between sections.
+    Always active and dragging synchronously adjusts all channels and saves state!
     """
     def __init__(self, parent, section_key: str, app_instance, height=6, **kwargs):
         super().__init__(parent, height=height, bg=THEME["divider_normal"],
                          highlightthickness=0, cursor="sb_v_double_arrow", **kwargs)
         self.section_key = section_key
         self.app = app_instance
-        self.div_height = height
         self.start_y = 0
         self.is_dragging = False
         
@@ -440,20 +485,13 @@ class SynchronizedHorizontalDivider(tk.Canvas):
         self.bind("<Configure>", lambda e: self.draw_divider())
         self.draw_divider()
 
-    def set_edit_mode(self, is_edit: bool):
-        bg = THEME["divider_active"] if is_edit else THEME["divider_normal"]
-        self.config(bg=bg)
-        self.draw_divider()
-
     def draw_divider(self):
         self.delete("all")
         w = self.winfo_width()
         h = self.winfo_height()
         if w < 10:
             return
-        
-        is_edit = getattr(self.app, "edit_mode_active", False)
-        grip_col = THEME["divider_grip_active"] if is_edit else THEME["divider_grip"]
+        grip_col = THEME["divider_grip_active"] if self.is_dragging else THEME["divider_grip"]
         mid_x = w // 2
         mid_y = h // 2
         for offset in [-14, 0, 14]:
@@ -463,6 +501,7 @@ class SynchronizedHorizontalDivider(tk.Canvas):
         self.start_y = event.y_root
         self.is_dragging = True
         self.config(bg=THEME["divider_active"])
+        self.draw_divider()
 
     def on_motion(self, event):
         if self.is_dragging:
@@ -473,17 +512,16 @@ class SynchronizedHorizontalDivider(tk.Canvas):
 
     def on_release(self, event):
         self.is_dragging = False
-        is_edit = getattr(self.app, "edit_mode_active", False)
-        self.config(bg=THEME["divider_active"] if is_edit else THEME["divider_normal"])
+        self.config(bg=THEME["divider_normal"])
         self.draw_divider()
+        self.app.persist_state()
 
     def on_enter(self, event):
         self.config(bg=THEME["divider_active"])
 
     def on_leave(self, event):
         if not self.is_dragging:
-            is_edit = getattr(self.app, "edit_mode_active", False)
-            self.config(bg=THEME["divider_active"] if is_edit else THEME["divider_normal"])
+            self.config(bg=THEME["divider_normal"])
 
 
 # ==============================================================================
@@ -491,8 +529,7 @@ class SynchronizedHorizontalDivider(tk.Canvas):
 # ==============================================================================
 class FullHeightVUMeter(tk.Canvas):
     """
-    Fixed-Width Vertical VU Meter that stretches across the FULL HEIGHT
-    of the channel card dynamically.
+    Fixed-Width Vertical VU Meter stretching 100% full height dynamically.
     """
     def __init__(self, parent, width=36, **kwargs):
         super().__init__(parent, width=width, bg=THEME["meter_bg"],
@@ -735,7 +772,7 @@ class StatusLED(tk.Canvas):
 
 
 # ==============================================================================
-# CHANNEL MONITOR CARD (With Fixed-Width VU & 150% Scaled Typography)
+# CHANNEL MONITOR CARD (Fixed VU + 150% Typography + Draggable Dividers)
 # ==============================================================================
 class ChannelCard(tk.Frame):
     def __init__(self, parent, channel_num: int, app_instance):
@@ -758,7 +795,7 @@ class ChannelCard(tk.Frame):
         self.setup_ui()
 
     def setup_ui(self):
-        # 1. Top Channel Header
+        # 1. Top Header
         header_frame = tk.Frame(self, bg=THEME["bg_card_inner"], padx=12, pady=6)
         header_frame.pack(fill="x", side="top")
         
@@ -929,10 +966,6 @@ class ChannelCard(tk.Frame):
         self.frame_flags.config(height=heights["flags"])
         self.frame_log.config(height=heights["log"])
 
-    def set_edit_mode(self, is_edit: bool):
-        for div in self.dividers:
-            div.set_edit_mode(is_edit)
-
     def log_rf_drop(self, dots: int, details: str = ""):
         now_str = datetime.datetime.now().strftime("%H:%M:%S")
         self.drop_event_count += 1
@@ -1072,13 +1105,22 @@ class ChannelCard(tk.Frame):
 
 
 # ==============================================================================
-# MAIN APPLICATION WINDOW
+# MAIN APPLICATION WINDOW (With Config Persistence)
 # ==============================================================================
 class AxientMonitorApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("RCShure - Shure Axient Digital Real-Time Monitor")
-        self.root.geometry("1360x760")
+        
+        # Load Persisted Config
+        self.saved_cfg = load_config()
+        self.shared_section_heights = self.saved_cfg.get("section_heights", {
+            "rf": 88, "tx": 96, "flags": 90, "log": 180
+        })
+        
+        # Restore Geometry
+        initial_geom = self.saved_cfg.get("geometry", "1360x760")
+        self.root.geometry(initial_geom)
         self.root.minsize(1020, 620)
         self.root.configure(bg=THEME["bg_root"])
         
@@ -1088,15 +1130,6 @@ class AxientMonitorApp:
         self.is_connected = False
         self.channel_count = 4
         self.channels: Dict[int, ChannelCard] = {}
-        
-        # Shared Synchronized Layout Heights
-        self.shared_section_heights = {
-            "rf": 88,
-            "tx": 96,
-            "flags": 90,
-            "log": 180,
-        }
-        self.edit_mode_active = False
 
         self.setup_ui()
         self.process_queue()
@@ -1125,7 +1158,7 @@ class AxientMonitorApp:
         tk.Label(ctrl_frame, text="IP:", font=("Segoe UI", 14, "bold"),
                  fg=THEME["text_main"], bg=THEME["bg_header"]).pack(side="left", padx=(0, 6))
         
-        self.ip_var = tk.StringVar(value="192.168.1.50")
+        self.ip_var = tk.StringVar(value=self.saved_cfg.get("ip", "192.168.1.50"))
         self.ip_entry = tk.Entry(ctrl_frame, textvariable=self.ip_var, font=("Consolas", 15, "bold"),
                                  bg=THEME["bg_card_inner"], fg=THEME["text_main"],
                                  insertbackground=THEME["text_accent"], width=13, bd=1, relief="solid")
@@ -1133,13 +1166,13 @@ class AxientMonitorApp:
 
         tk.Label(ctrl_frame, text="Port:", font=("Segoe UI", 14),
                  fg=THEME["text_muted"], bg=THEME["bg_header"]).pack(side="left", padx=(0, 4))
-        self.port_var = tk.StringVar(value=str(DEFAULT_SHURE_PORT))
+        self.port_var = tk.StringVar(value=self.saved_cfg.get("port", str(DEFAULT_SHURE_PORT)))
         self.port_entry = tk.Entry(ctrl_frame, textvariable=self.port_var, font=("Consolas", 15, "bold"),
                                    bg=THEME["bg_card_inner"], fg=THEME["text_main"],
                                    insertbackground=THEME["text_accent"], width=5, bd=1, relief="solid")
         self.port_entry.pack(side="left", padx=(0, 14))
 
-        self.sim_mode_var = tk.BooleanVar(value=True)
+        self.sim_mode_var = tk.BooleanVar(value=self.saved_cfg.get("sim_mode", True))
         self.sim_check = tk.Checkbutton(ctrl_frame, text="Simulazione Offline",
                                         variable=self.sim_mode_var, font=("Segoe UI", 14),
                                         fg=THEME["text_accent"], bg=THEME["bg_header"],
@@ -1153,14 +1186,6 @@ class AxientMonitorApp:
                                      activeforeground="#FFFFFF", bd=0, padx=18, pady=4, cursor="hand2",
                                      command=self.toggle_connection)
         self.btn_connect.pack(side="left", padx=(0, 16))
-
-        # EDIT LAYOUT BUTTON
-        self.btn_edit_layout = tk.Button(ctrl_frame, text="📐 EDIT LAYOUT", font=("Segoe UI", 14, "bold"),
-                                         bg=THEME["bg_card_inner"], fg=THEME["text_main"],
-                                         activebackground=THEME["bg_card_border"], activeforeground=THEME["text_accent"],
-                                         bd=1, relief="solid", padx=14, pady=4, cursor="hand2",
-                                         command=self.toggle_edit_layout)
-        self.btn_edit_layout.pack(side="left", padx=(0, 14))
 
         # Right Side Status
         status_frame = tk.Frame(header, bg=THEME["bg_header"])
@@ -1190,28 +1215,24 @@ class AxientMonitorApp:
                                highlightthickness=1, highlightbackground=THEME["bg_card_border"])
         self.footer.pack(fill="x", side="bottom")
 
-        self.footer_log = tk.Label(self.footer, text="Pronto. In modalità EDIT puoi trascinare qualsiasi divisore orizzontale per ridimensionare tutte le colonne sincronizzate.",
+        self.footer_log = tk.Label(self.footer, text="Pronto. Trascina qualsiasi divisore orizzontale per regolare le altezze sincronizzate (salvate automaticamente).",
                                    font=("Segoe UI", 14), fg=THEME["text_muted"], bg=THEME["bg_header"], anchor="w")
         self.footer_log.pack(side="left", fill="x", expand=True)
 
-        self.footer_info = tk.Label(self.footer, text="Fixed-Width VU | 150% Scaled Typography | Synchronized Heights",
+        self.footer_info = tk.Label(self.footer, text="Auto-Saved State | Fixed VU | 150% Typography | Synchronized Heights",
                                     font=("Consolas", 12), fg=THEME["text_muted"], bg=THEME["bg_header"])
         self.footer_info.pack(side="right")
 
-    def toggle_edit_layout(self):
-        self.edit_mode_active = not self.edit_mode_active
-        
-        if self.edit_mode_active:
-            self.btn_edit_layout.config(text="🔒 BLOCCA LAYOUT", bg=THEME["edit_mode_active"], fg="#000000")
-            self.paned_container.config(sashwidth=8, sashrelief="raised", bg=THEME["divider_active"])
-            self.footer_log.config(text="Modalità EDIT attiva: trascina un divisore orizzontale per variare l'altezza su TUTTI i canali contemporaneamente.")
-        else:
-            self.btn_edit_layout.config(text="📐 EDIT LAYOUT", bg=THEME["bg_card_inner"], fg=THEME["text_main"])
-            self.paned_container.config(sashwidth=4, sashrelief="flat", bg=THEME["bg_root"])
-            self.footer_log.config(text="Layout bloccato. Modalità operativa broadcast.")
-
-        for card in self.channels.values():
-            card.set_edit_mode(self.edit_mode_active)
+    def persist_state(self):
+        """Saves current heights, IP, port, sim mode and window geometry to config file."""
+        cfg = {
+            "section_heights": self.shared_section_heights,
+            "ip": self.ip_var.get().strip(),
+            "port": self.port_var.get().strip(),
+            "sim_mode": self.sim_mode_var.get(),
+            "geometry": self.root.geometry(),
+        }
+        save_config(cfg)
 
     def adjust_shared_section_height(self, section_key: str, delta_y: int):
         current_h = self.shared_section_heights.get(section_key, 80)
@@ -1375,6 +1396,7 @@ class AxientMonitorApp:
                         pass
 
     def on_closing(self):
+        self.persist_state()
         self.disconnect()
         self.root.destroy()
 
